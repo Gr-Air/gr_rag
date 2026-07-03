@@ -1,0 +1,1484 @@
+{
+  "pipelineVersion": "1.0.0",
+  "timestamp": "2026-06-30T16:09:41.028Z",
+  "summary": {
+    "totalDocs": 110,
+    "totalChunks": 4889,
+    "hardRejected": 0,
+    "softWarned": 381,
+    "passRate": "100.0%"
+  },
+  "perDoc": [
+    {
+      "docPath": "Raw/万科集团_物联网管理平台_项目人员清单_20261216.md",
+      "docId": "raw_万科集团_物联网管理平台_项目人员清单_20261216",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 5,
+      "warnings": [
+        "raw_万科集团_物联网管理平台_项目人员清单_20261216_1: high wikiLink density (37.9%)",
+        "raw_万科集团_物联网管理平台_项目人员清单_20261216_2: high wikiLink density (34.1%)",
+        "raw_万科集团_物联网管理平台_项目人员清单_20261216_3: high wikiLink density (36.7%)",
+        "raw_万科集团_物联网管理平台_项目人员清单_20261216_4: high wikiLink density (33.8%)",
+        "raw_万科集团_物联网管理平台_项目人员清单_20261216_5: high wikiLink density (47.1%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/万科集团_统一身份认证_来往账目_20240719.md",
+      "docId": "raw_万科集团_统一身份认证_来往账目_20240719",
+      "chunks": 9,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中信证券_AI质检系统_项目进度汇报_20250903.md",
+      "docId": "raw_中信证券_AI质检系统_项目进度汇报_20250903",
+      "chunks": 5,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中信证券_OA办公系统_系统测试报告_20261208.md",
+      "docId": "raw_中信证券_OA办公系统_系统测试报告_20261208",
+      "chunks": 8,
+      "hardRejected": 0,
+      "softWarned": 3,
+      "warnings": [
+        "raw_中信证券_OA办公系统_系统测试报告_20261208_0: high wikiLink density (37.7%)",
+        "raw_中信证券_OA办公系统_系统测试报告_20261208_1: high wikiLink density (38.6%)",
+        "raw_中信证券_OA办公系统_系统测试报告_20261208_6: high wikiLink density (31.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中信证券_数据中台_来往账目_20250407.md",
+      "docId": "raw_中信证券_数据中台_来往账目_20250407",
+      "chunks": 9,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中信证券_电子签章系统_客户项目验收_20240215.md",
+      "docId": "raw_中信证券_电子签章系统_客户项目验收_20240215",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_中信证券_电子签章系统_客户项目验收_20240215_3: high wikiLink density (32.2%)",
+        "raw_中信证券_电子签章系统_客户项目验收_20240215_4: high wikiLink density (33.8%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中信证券_财务共享中心_来往账目_20260526.md",
+      "docId": "raw_中信证券_财务共享中心_来往账目_20260526",
+      "chunks": 13,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中化集团_AI质检系统_需求规格说明书_20251113.md",
+      "docId": "raw_中化集团_AI质检系统_需求规格说明书_20251113",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 6,
+      "warnings": [
+        "raw_中化集团_AI质检系统_需求规格说明书_20251113_1: high wikiLink density (33.3%)",
+        "raw_中化集团_AI质检系统_需求规格说明书_20251113_5: high wikiLink density (37.7%)",
+        "raw_中化集团_AI质检系统_需求规格说明书_20251113_6: high wikiLink density (32.6%)",
+        "raw_中化集团_AI质检系统_需求规格说明书_20251113_8: high wikiLink density (30.6%)",
+        "raw_中化集团_AI质检系统_需求规格说明书_20251113_9: high wikiLink density (34.1%)",
+        "raw_中化集团_AI质检系统_需求规格说明书_20251113_10: high wikiLink density (31.9%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中化集团_CRM系统_项目管理计划_20250526.md",
+      "docId": "raw_中化集团_CRM系统_项目管理计划_20250526",
+      "chunks": 10,
+      "hardRejected": 0,
+      "softWarned": 5,
+      "warnings": [
+        "raw_中化集团_CRM系统_项目管理计划_20250526_0: high wikiLink density (33.9%)",
+        "raw_中化集团_CRM系统_项目管理计划_20250526_1: high wikiLink density (34.4%)",
+        "raw_中化集团_CRM系统_项目管理计划_20250526_2: high wikiLink density (32.4%)",
+        "raw_中化集团_CRM系统_项目管理计划_20250526_3: high wikiLink density (35.6%)",
+        "raw_中化集团_CRM系统_项目管理计划_20250526_7: high wikiLink density (30.6%)"
+      ],
+      "cleaningRatio": 0.03560830860534125
+    },
+    {
+      "docPath": "Raw/中化集团_大数据分析平台_需求规格说明书_20260416.md",
+      "docId": "raw_中化集团_大数据分析平台_需求规格说明书_20260416",
+      "chunks": 9,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_中化集团_大数据分析平台_需求规格说明书_20260416_4: high wikiLink density (40.8%)",
+        "raw_中化集团_大数据分析平台_需求规格说明书_20260416_5: high wikiLink density (33.1%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中化集团_物联网管理平台_项目管理计划_20241218.md",
+      "docId": "raw_中化集团_物联网管理平台_项目管理计划_20241218",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 4,
+      "warnings": [
+        "raw_中化集团_物联网管理平台_项目管理计划_20241218_1: high wikiLink density (38.4%)",
+        "raw_中化集团_物联网管理平台_项目管理计划_20241218_2: high wikiLink density (32.9%)",
+        "raw_中化集团_物联网管理平台_项目管理计划_20241218_5: high wikiLink density (31.6%)",
+        "raw_中化集团_物联网管理平台_项目管理计划_20241218_9: high wikiLink density (37.4%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国中车_ERP系统_技术架构设计_20240108.md",
+      "docId": "raw_中国中车_ERP系统_技术架构设计_20240108",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 10,
+      "warnings": [
+        "raw_中国中车_ERP系统_技术架构设计_20240108_0: high wikiLink density (33.0%)",
+        "raw_中国中车_ERP系统_技术架构设计_20240108_1: high wikiLink density (40.3%)",
+        "raw_中国中车_ERP系统_技术架构设计_20240108_2: high wikiLink density (49.6%)",
+        "raw_中国中车_ERP系统_技术架构设计_20240108_3: high wikiLink density (54.6%)",
+        "raw_中国中车_ERP系统_技术架构设计_20240108_4: high wikiLink density (51.6%)",
+        "raw_中国中车_ERP系统_技术架构设计_20240108_5: high wikiLink density (49.4%)",
+        "raw_中国中车_ERP系统_技术架构设计_20240108_6: high wikiLink density (42.3%)",
+        "raw_中国中车_ERP系统_技术架构设计_20240108_7: high wikiLink density (35.9%)",
+        "raw_中国中车_ERP系统_技术架构设计_20240108_9: high wikiLink density (34.9%)",
+        "raw_中国中车_ERP系统_技术架构设计_20240108_10: high wikiLink density (34.1%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国中铁_数字孪生平台_来往账目_20250622.md",
+      "docId": "raw_中国中铁_数字孪生平台_来往账目_20250622",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_中国中铁_数字孪生平台_来往账目_20250622_10: high wikiLink density (34.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国建筑_云原生迁移_项目费用结算_20250621.md",
+      "docId": "raw_中国建筑_云原生迁移_项目费用结算_20250621",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国建筑_数字孪生平台_技术方案_20240926.md",
+      "docId": "raw_中国建筑_数字孪生平台_技术方案_20240926",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 6,
+      "warnings": [
+        "raw_中国建筑_数字孪生平台_技术方案_20240926_1: high wikiLink density (34.5%)",
+        "raw_中国建筑_数字孪生平台_技术方案_20240926_2: high wikiLink density (40.9%)",
+        "raw_中国建筑_数字孪生平台_技术方案_20240926_3: high wikiLink density (39.4%)",
+        "raw_中国建筑_数字孪生平台_技术方案_20240926_6: high wikiLink density (32.2%)",
+        "raw_中国建筑_数字孪生平台_技术方案_20240926_7: high wikiLink density (36.0%)",
+        "raw_中国建筑_数字孪生平台_技术方案_20240926_8: high wikiLink density (37.1%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国建筑_数字孪生平台_需求规格说明书_20240221.md",
+      "docId": "raw_中国建筑_数字孪生平台_需求规格说明书_20240221",
+      "chunks": 10,
+      "hardRejected": 0,
+      "softWarned": 4,
+      "warnings": [
+        "raw_中国建筑_数字孪生平台_需求规格说明书_20240221_1: high wikiLink density (36.0%)",
+        "raw_中国建筑_数字孪生平台_需求规格说明书_20240221_5: high wikiLink density (33.3%)",
+        "raw_中国建筑_数字孪生平台_需求规格说明书_20240221_6: high wikiLink density (37.8%)",
+        "raw_中国建筑_数字孪生平台_需求规格说明书_20240221_7: high wikiLink density (33.5%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国建筑_统一身份认证_技术架构设计_20240628.md",
+      "docId": "raw_中国建筑_统一身份认证_技术架构设计_20240628",
+      "chunks": 10,
+      "hardRejected": 0,
+      "softWarned": 5,
+      "warnings": [
+        "raw_中国建筑_统一身份认证_技术架构设计_20240628_0: high wikiLink density (30.6%)",
+        "raw_中国建筑_统一身份认证_技术架构设计_20240628_1: high wikiLink density (40.4%)",
+        "raw_中国建筑_统一身份认证_技术架构设计_20240628_2: high wikiLink density (45.1%)",
+        "raw_中国建筑_统一身份认证_技术架构设计_20240628_3: high wikiLink density (38.9%)",
+        "raw_中国建筑_统一身份认证_技术架构设计_20240628_6: high wikiLink density (39.0%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国电科_大数据分析平台_项目进度汇报_20260513.md",
+      "docId": "raw_中国电科_大数据分析平台_项目进度汇报_20260513",
+      "chunks": 5,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_中国电科_大数据分析平台_项目进度汇报_20260513_1: high wikiLink density (33.0%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国电科_数据中台_项目管理计划_20260110.md",
+      "docId": "raw_中国电科_数据中台_项目管理计划_20260110",
+      "chunks": 9,
+      "hardRejected": 0,
+      "softWarned": 5,
+      "warnings": [
+        "raw_中国电科_数据中台_项目管理计划_20260110_0: high wikiLink density (34.4%)",
+        "raw_中国电科_数据中台_项目管理计划_20260110_1: high wikiLink density (38.8%)",
+        "raw_中国电科_数据中台_项目管理计划_20260110_2: high wikiLink density (32.1%)",
+        "raw_中国电科_数据中台_项目管理计划_20260110_3: high wikiLink density (33.5%)",
+        "raw_中国电科_数据中台_项目管理计划_20260110_6: high wikiLink density (31.0%)"
+      ],
+      "cleaningRatio": 0.04706147264129701
+    },
+    {
+      "docPath": "Raw/中国石油_大数据分析平台_系统测试报告_20251015.md",
+      "docId": "raw_中国石油_大数据分析平台_系统测试报告_20251015",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_中国石油_大数据分析平台_系统测试报告_20251015_0: high wikiLink density (32.5%)"
+      ],
+      "cleaningRatio": 0.06866820631254811
+    },
+    {
+      "docPath": "Raw/中国石油_物联网管理平台_技术方案_20260317.md",
+      "docId": "raw_中国石油_物联网管理平台_技术方案_20260317",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 7,
+      "warnings": [
+        "raw_中国石油_物联网管理平台_技术方案_20260317_1: high wikiLink density (34.9%)",
+        "raw_中国石油_物联网管理平台_技术方案_20260317_2: high wikiLink density (43.4%)",
+        "raw_中国石油_物联网管理平台_技术方案_20260317_3: high wikiLink density (45.6%)",
+        "raw_中国石油_物联网管理平台_技术方案_20260317_4: high wikiLink density (42.0%)",
+        "raw_中国石油_物联网管理平台_技术方案_20260317_7: high wikiLink density (39.5%)",
+        "raw_中国石油_物联网管理平台_技术方案_20260317_8: high wikiLink density (41.5%)",
+        "raw_中国石油_物联网管理平台_技术方案_20260317_11: high wikiLink density (30.8%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国石油_物联网管理平台_来往账目_20241111.md",
+      "docId": "raw_中国石油_物联网管理平台_来往账目_20241111",
+      "chunks": 14,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国石油_物联网管理平台_需求规格说明书_20260104.md",
+      "docId": "raw_中国石油_物联网管理平台_需求规格说明书_20260104",
+      "chunks": 8,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_中国石油_物联网管理平台_需求规格说明书_20260104_3: high wikiLink density (34.7%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国石油_项目管理系统_技术方案_20260710.md",
+      "docId": "raw_中国石油_项目管理系统_技术方案_20260710",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 7,
+      "warnings": [
+        "raw_中国石油_项目管理系统_技术方案_20260710_1: high wikiLink density (41.2%)",
+        "raw_中国石油_项目管理系统_技术方案_20260710_2: high wikiLink density (43.7%)",
+        "raw_中国石油_项目管理系统_技术方案_20260710_3: high wikiLink density (40.9%)",
+        "raw_中国石油_项目管理系统_技术方案_20260710_4: high wikiLink density (43.2%)",
+        "raw_中国石油_项目管理系统_技术方案_20260710_8: high wikiLink density (41.7%)",
+        "raw_中国石油_项目管理系统_技术方案_20260710_9: high wikiLink density (33.9%)",
+        "raw_中国石油_项目管理系统_技术方案_20260710_11: high wikiLink density (31.0%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国移动_智慧园区平台_来往账目_20241020.md",
+      "docId": "raw_中国移动_智慧园区平台_来往账目_20241020",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国移动_智能客服系统_需求规格说明书_20260905.md",
+      "docId": "raw_中国移动_智能客服系统_需求规格说明书_20260905",
+      "chunks": 9,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_中国移动_智能客服系统_需求规格说明书_20260905_1: high wikiLink density (32.3%)",
+        "raw_中国移动_智能客服系统_需求规格说明书_20260905_5: high wikiLink density (34.2%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国移动_统一身份认证_技术方案_20241008.md",
+      "docId": "raw_中国移动_统一身份认证_技术方案_20241008",
+      "chunks": 10,
+      "hardRejected": 0,
+      "softWarned": 4,
+      "warnings": [
+        "raw_中国移动_统一身份认证_技术方案_20241008_1: high wikiLink density (43.7%)",
+        "raw_中国移动_统一身份认证_技术方案_20241008_2: high wikiLink density (46.3%)",
+        "raw_中国移动_统一身份认证_技术方案_20241008_3: high wikiLink density (39.5%)",
+        "raw_中国移动_统一身份认证_技术方案_20241008_8: high wikiLink density (30.6%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国移动_风控系统_系统测试报告_20241116.md",
+      "docId": "raw_中国移动_风控系统_系统测试报告_20241116",
+      "chunks": 8,
+      "hardRejected": 0,
+      "softWarned": 3,
+      "warnings": [
+        "raw_中国移动_风控系统_系统测试报告_20241116_1: high wikiLink density (37.9%)",
+        "raw_中国移动_风控系统_系统测试报告_20241116_2: high wikiLink density (33.7%)",
+        "raw_中国移动_风控系统_系统测试报告_20241116_5: high wikiLink density (37.8%)"
+      ],
+      "cleaningRatio": 0.046086508753862
+    },
+    {
+      "docPath": "Raw/中国移动_风控系统_项目进度汇报_20240907.md",
+      "docId": "raw_中国移动_风控系统_项目进度汇报_20240907",
+      "chunks": 4,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_中国移动_风控系统_项目进度汇报_20240907_3: high wikiLink density (33.5%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国联通_OA办公系统_项目进度汇报_20240405.md",
+      "docId": "raw_中国联通_OA办公系统_项目进度汇报_20240405",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 3,
+      "warnings": [
+        "raw_中国联通_OA办公系统_项目进度汇报_20240405_1: high wikiLink density (34.2%)",
+        "raw_中国联通_OA办公系统_项目进度汇报_20240405_2: high wikiLink density (31.4%)",
+        "raw_中国联通_OA办公系统_项目进度汇报_20240405_5: high wikiLink density (30.6%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国联通_供应链管理平台_需求规格说明书_20261224.md",
+      "docId": "raw_中国联通_供应链管理平台_需求规格说明书_20261224",
+      "chunks": 8,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_中国联通_供应链管理平台_需求规格说明书_20261224_5: high wikiLink density (35.9%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国联通_数据中台_项目人员清单_20260711.md",
+      "docId": "raw_中国联通_数据中台_项目人员清单_20260711",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_中国联通_数据中台_项目人员清单_20260711_2: high wikiLink density (31.7%)",
+        "raw_中国联通_数据中台_项目人员清单_20260711_4: high wikiLink density (42.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国联通_物联网管理平台_客户项目验收_20260826.md",
+      "docId": "raw_中国联通_物联网管理平台_客户项目验收_20260826",
+      "chunks": 8,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_中国联通_物联网管理平台_客户项目验收_20260826_1: high wikiLink density (37.4%)",
+        "raw_中国联通_物联网管理平台_客户项目验收_20260826_5: high wikiLink density (31.6%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国航发_数字孪生平台_技术方案_20250624.md",
+      "docId": "raw_中国航发_数字孪生平台_技术方案_20250624",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 6,
+      "warnings": [
+        "raw_中国航发_数字孪生平台_技术方案_20250624_1: high wikiLink density (34.7%)",
+        "raw_中国航发_数字孪生平台_技术方案_20250624_2: high wikiLink density (41.4%)",
+        "raw_中国航发_数字孪生平台_技术方案_20250624_3: high wikiLink density (38.2%)",
+        "raw_中国航发_数字孪生平台_技术方案_20250624_7: high wikiLink density (42.0%)",
+        "raw_中国航发_数字孪生平台_技术方案_20250624_8: high wikiLink density (42.4%)",
+        "raw_中国航发_数字孪生平台_技术方案_20250624_9: high wikiLink density (35.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国航发_数据中台_技术架构设计_20260505.md",
+      "docId": "raw_中国航发_数据中台_技术架构设计_20260505",
+      "chunks": 14,
+      "hardRejected": 0,
+      "softWarned": 13,
+      "warnings": [
+        "raw_中国航发_数据中台_技术架构设计_20260505_1: high wikiLink density (36.6%)",
+        "raw_中国航发_数据中台_技术架构设计_20260505_2: high wikiLink density (35.4%)",
+        "raw_中国航发_数据中台_技术架构设计_20260505_3: high wikiLink density (36.9%)",
+        "raw_中国航发_数据中台_技术架构设计_20260505_4: high wikiLink density (31.7%)",
+        "raw_中国航发_数据中台_技术架构设计_20260505_5: high wikiLink density (30.8%)",
+        "raw_中国航发_数据中台_技术架构设计_20260505_6: high wikiLink density (32.2%)",
+        "raw_中国航发_数据中台_技术架构设计_20260505_7: high wikiLink density (34.5%)",
+        "raw_中国航发_数据中台_技术架构设计_20260505_8: high wikiLink density (34.7%)",
+        "raw_中国航发_数据中台_技术架构设计_20260505_9: high wikiLink density (40.0%)",
+        "raw_中国航发_数据中台_技术架构设计_20260505_10: high wikiLink density (39.3%)",
+        "raw_中国航发_数据中台_技术架构设计_20260505_11: high wikiLink density (38.5%)",
+        "raw_中国航发_数据中台_技术架构设计_20260505_12: high wikiLink density (34.3%)",
+        "raw_中国航发_数据中台_技术架构设计_20260505_13: high wikiLink density (40.0%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国航发_风控系统_客户项目验收_20250320.md",
+      "docId": "raw_中国航发_风控系统_客户项目验收_20250320",
+      "chunks": 9,
+      "hardRejected": 0,
+      "softWarned": 3,
+      "warnings": [
+        "raw_中国航发_风控系统_客户项目验收_20250320_1: high wikiLink density (43.4%)",
+        "raw_中国航发_风控系统_客户项目验收_20250320_5: high wikiLink density (35.2%)",
+        "raw_中国航发_风控系统_客户项目验收_20250320_6: high wikiLink density (33.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国航天_AI质检系统_技术架构设计_20240224.md",
+      "docId": "raw_中国航天_AI质检系统_技术架构设计_20240224",
+      "chunks": 14,
+      "hardRejected": 0,
+      "softWarned": 11,
+      "warnings": [
+        "raw_中国航天_AI质检系统_技术架构设计_20240224_2: high wikiLink density (32.1%)",
+        "raw_中国航天_AI质检系统_技术架构设计_20240224_3: high wikiLink density (42.9%)",
+        "raw_中国航天_AI质检系统_技术架构设计_20240224_4: high wikiLink density (36.5%)",
+        "raw_中国航天_AI质检系统_技术架构设计_20240224_5: high wikiLink density (38.8%)",
+        "raw_中国航天_AI质检系统_技术架构设计_20240224_6: high wikiLink density (42.8%)",
+        "raw_中国航天_AI质检系统_技术架构设计_20240224_7: high wikiLink density (46.9%)",
+        "raw_中国航天_AI质检系统_技术架构设计_20240224_8: high wikiLink density (40.3%)",
+        "raw_中国航天_AI质检系统_技术架构设计_20240224_9: high wikiLink density (38.7%)",
+        "raw_中国航天_AI质检系统_技术架构设计_20240224_10: high wikiLink density (36.4%)",
+        "raw_中国航天_AI质检系统_技术架构设计_20240224_11: high wikiLink density (35.6%)",
+        "raw_中国航天_AI质检系统_技术架构设计_20240224_12: high wikiLink density (31.2%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国航天_数字孪生平台_系统测试报告_20250608.md",
+      "docId": "raw_中国航天_数字孪生平台_系统测试报告_20250608",
+      "chunks": 14,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_中国航天_数字孪生平台_系统测试报告_20250608_2: high wikiLink density (42.4%)",
+        "raw_中国航天_数字孪生平台_系统测试报告_20250608_3: high wikiLink density (31.0%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国航天_智能客服系统_项目人员清单_20241211.md",
+      "docId": "raw_中国航天_智能客服系统_项目人员清单_20241211",
+      "chunks": 10,
+      "hardRejected": 0,
+      "softWarned": 5,
+      "warnings": [
+        "raw_中国航天_智能客服系统_项目人员清单_20241211_0: high wikiLink density (33.4%)",
+        "raw_中国航天_智能客服系统_项目人员清单_20241211_1: high wikiLink density (31.0%)",
+        "raw_中国航天_智能客服系统_项目人员清单_20241211_2: high wikiLink density (37.2%)",
+        "raw_中国航天_智能客服系统_项目人员清单_20241211_3: high wikiLink density (32.3%)",
+        "raw_中国航天_智能客服系统_项目人员清单_20241211_4: high wikiLink density (37.0%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国航天_项目管理系统_项目人员清单_20240404.md",
+      "docId": "raw_中国航天_项目管理系统_项目人员清单_20240404",
+      "chunks": 13,
+      "hardRejected": 0,
+      "softWarned": 4,
+      "warnings": [
+        "raw_中国航天_项目管理系统_项目人员清单_20240404_1: high wikiLink density (31.2%)",
+        "raw_中国航天_项目管理系统_项目人员清单_20240404_4: high wikiLink density (32.4%)",
+        "raw_中国航天_项目管理系统_项目人员清单_20240404_5: high wikiLink density (34.2%)",
+        "raw_中国航天_项目管理系统_项目人员清单_20240404_6: high wikiLink density (43.9%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国航天_风控系统_项目费用结算_20260620.md",
+      "docId": "raw_中国航天_风控系统_项目费用结算_20260620",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国船舶_云原生迁移_需求规格说明书_20240506.md",
+      "docId": "raw_中国船舶_云原生迁移_需求规格说明书_20240506",
+      "chunks": 7,
+      "hardRejected": 0,
+      "softWarned": 3,
+      "warnings": [
+        "raw_中国船舶_云原生迁移_需求规格说明书_20240506_3: high wikiLink density (33.0%)",
+        "raw_中国船舶_云原生迁移_需求规格说明书_20240506_4: high wikiLink density (32.8%)",
+        "raw_中国船舶_云原生迁移_需求规格说明书_20240506_6: high wikiLink density (32.2%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国船舶_供应链管理平台_技术方案_20240220.md",
+      "docId": "raw_中国船舶_供应链管理平台_技术方案_20240220",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 9,
+      "warnings": [
+        "raw_中国船舶_供应链管理平台_技术方案_20240220_2: high wikiLink density (36.1%)",
+        "raw_中国船舶_供应链管理平台_技术方案_20240220_3: high wikiLink density (38.3%)",
+        "raw_中国船舶_供应链管理平台_技术方案_20240220_4: high wikiLink density (41.7%)",
+        "raw_中国船舶_供应链管理平台_技术方案_20240220_5: high wikiLink density (44.8%)",
+        "raw_中国船舶_供应链管理平台_技术方案_20240220_6: high wikiLink density (32.4%)",
+        "raw_中国船舶_供应链管理平台_技术方案_20240220_7: high wikiLink density (30.5%)",
+        "raw_中国船舶_供应链管理平台_技术方案_20240220_8: high wikiLink density (31.0%)",
+        "raw_中国船舶_供应链管理平台_技术方案_20240220_9: high wikiLink density (34.1%)",
+        "raw_中国船舶_供应链管理平台_技术方案_20240220_10: high wikiLink density (34.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国船舶_数字孪生平台_需求规格说明书_20261204.md",
+      "docId": "raw_中国船舶_数字孪生平台_需求规格说明书_20261204",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_中国船舶_数字孪生平台_需求规格说明书_20261204_5: high wikiLink density (33.4%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国船舶_智慧园区平台_项目人员清单_20240905.md",
+      "docId": "raw_中国船舶_智慧园区平台_项目人员清单_20240905",
+      "chunks": 7,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_中国船舶_智慧园区平台_项目人员清单_20240905_0: high wikiLink density (34.8%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国银行_云原生迁移_技术架构设计_20261028.md",
+      "docId": "raw_中国银行_云原生迁移_技术架构设计_20261028",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 8,
+      "warnings": [
+        "raw_中国银行_云原生迁移_技术架构设计_20261028_2: high wikiLink density (32.7%)",
+        "raw_中国银行_云原生迁移_技术架构设计_20261028_3: high wikiLink density (34.0%)",
+        "raw_中国银行_云原生迁移_技术架构设计_20261028_5: high wikiLink density (32.9%)",
+        "raw_中国银行_云原生迁移_技术架构设计_20261028_6: high wikiLink density (38.1%)",
+        "raw_中国银行_云原生迁移_技术架构设计_20261028_7: high wikiLink density (40.9%)",
+        "raw_中国银行_云原生迁移_技术架构设计_20261028_8: high wikiLink density (33.9%)",
+        "raw_中国银行_云原生迁移_技术架构设计_20261028_9: high wikiLink density (31.7%)",
+        "raw_中国银行_云原生迁移_技术架构设计_20261028_10: high wikiLink density (30.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中国银行_数据中台_来往账目_20250828.md",
+      "docId": "raw_中国银行_数据中台_来往账目_20250828",
+      "chunks": 10,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中粮集团_统一身份认证_技术方案_20250928.md",
+      "docId": "raw_中粮集团_统一身份认证_技术方案_20250928",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 6,
+      "warnings": [
+        "raw_中粮集团_统一身份认证_技术方案_20250928_1: high wikiLink density (43.0%)",
+        "raw_中粮集团_统一身份认证_技术方案_20250928_2: high wikiLink density (47.0%)",
+        "raw_中粮集团_统一身份认证_技术方案_20250928_3: high wikiLink density (41.8%)",
+        "raw_中粮集团_统一身份认证_技术方案_20250928_4: high wikiLink density (40.4%)",
+        "raw_中粮集团_统一身份认证_技术方案_20250928_8: high wikiLink density (32.1%)",
+        "raw_中粮集团_统一身份认证_技术方案_20250928_9: high wikiLink density (41.4%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中粮集团_项目管理系统_技术架构设计_20260911.md",
+      "docId": "raw_中粮集团_项目管理系统_技术架构设计_20260911",
+      "chunks": 15,
+      "hardRejected": 0,
+      "softWarned": 13,
+      "warnings": [
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_1: high wikiLink density (35.5%)",
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_2: high wikiLink density (37.9%)",
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_3: high wikiLink density (46.1%)",
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_4: high wikiLink density (39.6%)",
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_5: high wikiLink density (36.4%)",
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_6: high wikiLink density (37.2%)",
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_7: high wikiLink density (40.6%)",
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_8: high wikiLink density (40.1%)",
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_9: high wikiLink density (41.4%)",
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_10: high wikiLink density (40.9%)",
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_11: high wikiLink density (39.2%)",
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_12: high wikiLink density (34.2%)",
+        "raw_中粮集团_项目管理系统_技术架构设计_20260911_13: high wikiLink density (34.9%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中钢集团_供应链管理平台_项目人员清单_20240826.md",
+      "docId": "raw_中钢集团_供应链管理平台_项目人员清单_20240826",
+      "chunks": 13,
+      "hardRejected": 0,
+      "softWarned": 6,
+      "warnings": [
+        "raw_中钢集团_供应链管理平台_项目人员清单_20240826_1: high wikiLink density (38.2%)",
+        "raw_中钢集团_供应链管理平台_项目人员清单_20240826_2: high wikiLink density (50.8%)",
+        "raw_中钢集团_供应链管理平台_项目人员清单_20240826_3: high wikiLink density (40.6%)",
+        "raw_中钢集团_供应链管理平台_项目人员清单_20240826_4: high wikiLink density (36.3%)",
+        "raw_中钢集团_供应链管理平台_项目人员清单_20240826_5: high wikiLink density (35.1%)",
+        "raw_中钢集团_供应链管理平台_项目人员清单_20240826_6: high wikiLink density (45.1%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中钢集团_大数据分析平台_项目费用结算_20250107.md",
+      "docId": "raw_中钢集团_大数据分析平台_项目费用结算_20250107",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中钢集团_数字孪生平台_技术方案_20241109.md",
+      "docId": "raw_中钢集团_数字孪生平台_技术方案_20241109",
+      "chunks": 10,
+      "hardRejected": 0,
+      "softWarned": 6,
+      "warnings": [
+        "raw_中钢集团_数字孪生平台_技术方案_20241109_1: high wikiLink density (34.2%)",
+        "raw_中钢集团_数字孪生平台_技术方案_20241109_2: high wikiLink density (43.9%)",
+        "raw_中钢集团_数字孪生平台_技术方案_20241109_3: high wikiLink density (40.7%)",
+        "raw_中钢集团_数字孪生平台_技术方案_20241109_4: high wikiLink density (38.7%)",
+        "raw_中钢集团_数字孪生平台_技术方案_20241109_7: high wikiLink density (30.5%)",
+        "raw_中钢集团_数字孪生平台_技术方案_20241109_8: high wikiLink density (33.1%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中钢集团_数据中台_技术架构设计_20260625.md",
+      "docId": "raw_中钢集团_数据中台_技术架构设计_20260625",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 10,
+      "warnings": [
+        "raw_中钢集团_数据中台_技术架构设计_20260625_1: high wikiLink density (38.7%)",
+        "raw_中钢集团_数据中台_技术架构设计_20260625_2: high wikiLink density (35.2%)",
+        "raw_中钢集团_数据中台_技术架构设计_20260625_3: high wikiLink density (31.0%)",
+        "raw_中钢集团_数据中台_技术架构设计_20260625_4: high wikiLink density (34.0%)",
+        "raw_中钢集团_数据中台_技术架构设计_20260625_5: high wikiLink density (39.6%)",
+        "raw_中钢集团_数据中台_技术架构设计_20260625_6: high wikiLink density (36.5%)",
+        "raw_中钢集团_数据中台_技术架构设计_20260625_7: high wikiLink density (34.0%)",
+        "raw_中钢集团_数据中台_技术架构设计_20260625_8: high wikiLink density (39.0%)",
+        "raw_中钢集团_数据中台_技术架构设计_20260625_9: high wikiLink density (32.6%)",
+        "raw_中钢集团_数据中台_技术架构设计_20260625_10: high wikiLink density (33.6%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/中钢集团_智能客服系统_技术方案_20240607.md",
+      "docId": "raw_中钢集团_智能客服系统_技术方案_20240607",
+      "chunks": 13,
+      "hardRejected": 0,
+      "softWarned": 5,
+      "warnings": [
+        "raw_中钢集团_智能客服系统_技术方案_20240607_2: high wikiLink density (38.0%)",
+        "raw_中钢集团_智能客服系统_技术方案_20240607_3: high wikiLink density (51.7%)",
+        "raw_中钢集团_智能客服系统_技术方案_20240607_4: high wikiLink density (47.0%)",
+        "raw_中钢集团_智能客服系统_技术方案_20240607_5: high wikiLink density (51.3%)",
+        "raw_中钢集团_智能客服系统_技术方案_20240607_10: high wikiLink density (32.2%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/华润置地_微服务架构改造_技术架构设计_20250315.md",
+      "docId": "raw_华润置地_微服务架构改造_技术架构设计_20250315",
+      "chunks": 13,
+      "hardRejected": 0,
+      "softWarned": 10,
+      "warnings": [
+        "raw_华润置地_微服务架构改造_技术架构设计_20250315_1: high wikiLink density (37.5%)",
+        "raw_华润置地_微服务架构改造_技术架构设计_20250315_2: high wikiLink density (40.0%)",
+        "raw_华润置地_微服务架构改造_技术架构设计_20250315_3: high wikiLink density (35.8%)",
+        "raw_华润置地_微服务架构改造_技术架构设计_20250315_4: high wikiLink density (33.1%)",
+        "raw_华润置地_微服务架构改造_技术架构设计_20250315_5: high wikiLink density (35.0%)",
+        "raw_华润置地_微服务架构改造_技术架构设计_20250315_6: high wikiLink density (42.1%)",
+        "raw_华润置地_微服务架构改造_技术架构设计_20250315_7: high wikiLink density (38.5%)",
+        "raw_华润置地_微服务架构改造_技术架构设计_20250315_8: high wikiLink density (37.2%)",
+        "raw_华润置地_微服务架构改造_技术架构设计_20250315_9: high wikiLink density (39.9%)",
+        "raw_华润置地_微服务架构改造_技术架构设计_20250315_10: high wikiLink density (35.5%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/华润置地_数字孪生平台_项目进度汇报_20240513.md",
+      "docId": "raw_华润置地_数字孪生平台_项目进度汇报_20240513",
+      "chunks": 4,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/华润置地_数据中台_项目人员清单_20260405.md",
+      "docId": "raw_华润置地_数据中台_项目人员清单_20260405",
+      "chunks": 10,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/华能集团_AI质检系统_项目人员清单_20261021.md",
+      "docId": "raw_华能集团_AI质检系统_项目人员清单_20261021",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_华能集团_AI质检系统_项目人员清单_20261021_4: high wikiLink density (30.0%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/华能集团_CRM系统_项目进度汇报_20240814.md",
+      "docId": "raw_华能集团_CRM系统_项目进度汇报_20240814",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/华能集团_OA办公系统_技术方案_20240603.md",
+      "docId": "raw_华能集团_OA办公系统_技术方案_20240603",
+      "chunks": 13,
+      "hardRejected": 0,
+      "softWarned": 8,
+      "warnings": [
+        "raw_华能集团_OA办公系统_技术方案_20240603_0: high wikiLink density (30.8%)",
+        "raw_华能集团_OA办公系统_技术方案_20240603_3: high wikiLink density (46.7%)",
+        "raw_华能集团_OA办公系统_技术方案_20240603_4: high wikiLink density (52.5%)",
+        "raw_华能集团_OA办公系统_技术方案_20240603_5: high wikiLink density (50.6%)",
+        "raw_华能集团_OA办公系统_技术方案_20240603_6: high wikiLink density (53.7%)",
+        "raw_华能集团_OA办公系统_技术方案_20240603_8: high wikiLink density (33.9%)",
+        "raw_华能集团_OA办公系统_技术方案_20240603_9: high wikiLink density (36.5%)",
+        "raw_华能集团_OA办公系统_技术方案_20240603_10: high wikiLink density (35.6%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/华能集团_云原生迁移_系统测试报告_20241114.md",
+      "docId": "raw_华能集团_云原生迁移_系统测试报告_20241114",
+      "chunks": 8,
+      "hardRejected": 0,
+      "softWarned": 4,
+      "warnings": [
+        "raw_华能集团_云原生迁移_系统测试报告_20241114_1: high wikiLink density (44.4%)",
+        "raw_华能集团_云原生迁移_系统测试报告_20241114_2: high wikiLink density (44.7%)",
+        "raw_华能集团_云原生迁移_系统测试报告_20241114_3: high wikiLink density (30.4%)",
+        "raw_华能集团_云原生迁移_系统测试报告_20241114_6: high wikiLink density (33.4%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/华能集团_项目管理系统_项目管理计划_20251104.md",
+      "docId": "raw_华能集团_项目管理系统_项目管理计划_20251104",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 7,
+      "warnings": [
+        "raw_华能集团_项目管理系统_项目管理计划_20251104_2: high wikiLink density (38.2%)",
+        "raw_华能集团_项目管理系统_项目管理计划_20251104_3: high wikiLink density (38.2%)",
+        "raw_华能集团_项目管理系统_项目管理计划_20251104_4: high wikiLink density (31.6%)",
+        "raw_华能集团_项目管理系统_项目管理计划_20251104_5: high wikiLink density (32.7%)",
+        "raw_华能集团_项目管理系统_项目管理计划_20251104_6: high wikiLink density (31.0%)",
+        "raw_华能集团_项目管理系统_项目管理计划_20251104_7: high wikiLink density (31.5%)",
+        "raw_华能集团_项目管理系统_项目管理计划_20251104_9: high wikiLink density (31.2%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/南方电网_人力资源系统_项目进度汇报_20241108.md",
+      "docId": "raw_南方电网_人力资源系统_项目进度汇报_20241108",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_南方电网_人力资源系统_项目进度汇报_20241108_2: high wikiLink density (31.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/南方电网_供应链管理平台_需求规格说明书_20241011.md",
+      "docId": "raw_南方电网_供应链管理平台_需求规格说明书_20241011",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_南方电网_供应链管理平台_需求规格说明书_20241011_5: high wikiLink density (35.1%)",
+        "raw_南方电网_供应链管理平台_需求规格说明书_20241011_8: high wikiLink density (34.0%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/南方电网_项目管理系统_项目人员清单_20260818.md",
+      "docId": "raw_南方电网_项目管理系统_项目人员清单_20260818",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_南方电网_项目管理系统_项目人员清单_20260818_4: high wikiLink density (35.5%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国家电网_AI质检系统_客户项目验收_20240820.md",
+      "docId": "raw_国家电网_AI质检系统_客户项目验收_20240820",
+      "chunks": 7,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_国家电网_AI质检系统_客户项目验收_20240820_1: high wikiLink density (38.8%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国家电网_ERP系统_技术架构设计_20240326.md",
+      "docId": "raw_国家电网_ERP系统_技术架构设计_20240326",
+      "chunks": 10,
+      "hardRejected": 0,
+      "softWarned": 8,
+      "warnings": [
+        "raw_国家电网_ERP系统_技术架构设计_20240326_1: high wikiLink density (36.5%)",
+        "raw_国家电网_ERP系统_技术架构设计_20240326_2: high wikiLink density (30.5%)",
+        "raw_国家电网_ERP系统_技术架构设计_20240326_3: high wikiLink density (32.4%)",
+        "raw_国家电网_ERP系统_技术架构设计_20240326_4: high wikiLink density (37.5%)",
+        "raw_国家电网_ERP系统_技术架构设计_20240326_5: high wikiLink density (41.7%)",
+        "raw_国家电网_ERP系统_技术架构设计_20240326_6: high wikiLink density (40.4%)",
+        "raw_国家电网_ERP系统_技术架构设计_20240326_8: high wikiLink density (32.0%)",
+        "raw_国家电网_ERP系统_技术架构设计_20240326_9: high wikiLink density (34.7%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国家电网_智慧园区平台_项目管理计划_20250106.md",
+      "docId": "raw_国家电网_智慧园区平台_项目管理计划_20250106",
+      "chunks": 13,
+      "hardRejected": 0,
+      "softWarned": 4,
+      "warnings": [
+        "raw_国家电网_智慧园区平台_项目管理计划_20250106_1: high wikiLink density (44.1%)",
+        "raw_国家电网_智慧园区平台_项目管理计划_20250106_2: high wikiLink density (31.9%)",
+        "raw_国家电网_智慧园区平台_项目管理计划_20250106_5: high wikiLink density (33.0%)",
+        "raw_国家电网_智慧园区平台_项目管理计划_20250106_10: high wikiLink density (31.8%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国家电网_智能客服系统_客户项目验收_20250928.md",
+      "docId": "raw_国家电网_智能客服系统_客户项目验收_20250928",
+      "chunks": 7,
+      "hardRejected": 0,
+      "softWarned": 3,
+      "warnings": [
+        "raw_国家电网_智能客服系统_客户项目验收_20250928_1: high wikiLink density (50.2%)",
+        "raw_国家电网_智能客服系统_客户项目验收_20250928_4: high wikiLink density (31.7%)",
+        "raw_国家电网_智能客服系统_客户项目验收_20250928_5: high wikiLink density (32.6%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国家电网_智能客服系统_项目进度汇报_20260403.md",
+      "docId": "raw_国家电网_智能客服系统_项目进度汇报_20260403",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_国家电网_智能客服系统_项目进度汇报_20260403_1: high wikiLink density (30.0%)",
+        "raw_国家电网_智能客服系统_项目进度汇报_20260403_4: high wikiLink density (35.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国家电网_物联网管理平台_需求规格说明书_20250820.md",
+      "docId": "raw_国家电网_物联网管理平台_需求规格说明书_20250820",
+      "chunks": 9,
+      "hardRejected": 0,
+      "softWarned": 6,
+      "warnings": [
+        "raw_国家电网_物联网管理平台_需求规格说明书_20250820_1: high wikiLink density (32.8%)",
+        "raw_国家电网_物联网管理平台_需求规格说明书_20250820_2: high wikiLink density (35.3%)",
+        "raw_国家电网_物联网管理平台_需求规格说明书_20250820_3: high wikiLink density (34.6%)",
+        "raw_国家电网_物联网管理平台_需求规格说明书_20250820_4: high wikiLink density (32.1%)",
+        "raw_国家电网_物联网管理平台_需求规格说明书_20250820_7: high wikiLink density (32.6%)",
+        "raw_国家电网_物联网管理平台_需求规格说明书_20250820_8: high wikiLink density (31.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国家电网_物联网管理平台_项目管理计划_20250607.md",
+      "docId": "raw_国家电网_物联网管理平台_项目管理计划_20250607",
+      "chunks": 10,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_国家电网_物联网管理平台_项目管理计划_20250607_1: high wikiLink density (35.5%)",
+        "raw_国家电网_物联网管理平台_项目管理计划_20250607_2: high wikiLink density (34.2%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国家电网_电子签章系统_客户项目验收_20240321.md",
+      "docId": "raw_国家电网_电子签章系统_客户项目验收_20240321",
+      "chunks": 9,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_国家电网_电子签章系统_客户项目验收_20240321_1: high wikiLink density (33.7%)",
+        "raw_国家电网_电子签章系统_客户项目验收_20240321_7: high wikiLink density (32.9%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国家电网_风控系统_项目人员清单_20261218.md",
+      "docId": "raw_国家电网_风控系统_项目人员清单_20261218",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_国家电网_风控系统_项目人员清单_20261218_3: high wikiLink density (32.8%)",
+        "raw_国家电网_风控系统_项目人员清单_20261218_4: high wikiLink density (44.2%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国泰君安_CRM系统_技术架构设计_20260626.md",
+      "docId": "raw_国泰君安_CRM系统_技术架构设计_20260626",
+      "chunks": 9,
+      "hardRejected": 0,
+      "softWarned": 8,
+      "warnings": [
+        "raw_国泰君安_CRM系统_技术架构设计_20260626_1: high wikiLink density (41.6%)",
+        "raw_国泰君安_CRM系统_技术架构设计_20260626_2: high wikiLink density (36.6%)",
+        "raw_国泰君安_CRM系统_技术架构设计_20260626_3: high wikiLink density (33.7%)",
+        "raw_国泰君安_CRM系统_技术架构设计_20260626_4: high wikiLink density (39.4%)",
+        "raw_国泰君安_CRM系统_技术架构设计_20260626_5: high wikiLink density (41.1%)",
+        "raw_国泰君安_CRM系统_技术架构设计_20260626_6: high wikiLink density (40.0%)",
+        "raw_国泰君安_CRM系统_技术架构设计_20260626_7: high wikiLink density (35.2%)",
+        "raw_国泰君安_CRM系统_技术架构设计_20260626_8: high wikiLink density (45.2%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国泰君安_人力资源系统_系统测试报告_20250707.md",
+      "docId": "raw_国泰君安_人力资源系统_系统测试报告_20250707",
+      "chunks": 8,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_国泰君安_人力资源系统_系统测试报告_20250707_0: high wikiLink density (30.6%)",
+        "raw_国泰君安_人力资源系统_系统测试报告_20250707_6: high wikiLink density (30.2%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国泰君安_数据中台_需求规格说明书_20250101.md",
+      "docId": "raw_国泰君安_数据中台_需求规格说明书_20250101",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 6,
+      "warnings": [
+        "raw_国泰君安_数据中台_需求规格说明书_20250101_5: high wikiLink density (31.6%)",
+        "raw_国泰君安_数据中台_需求规格说明书_20250101_6: high wikiLink density (30.6%)",
+        "raw_国泰君安_数据中台_需求规格说明书_20250101_7: high wikiLink density (34.3%)",
+        "raw_国泰君安_数据中台_需求规格说明书_20250101_8: high wikiLink density (33.6%)",
+        "raw_国泰君安_数据中台_需求规格说明书_20250101_9: high wikiLink density (34.6%)",
+        "raw_国泰君安_数据中台_需求规格说明书_20250101_10: high wikiLink density (32.1%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/国泰君安_统一身份认证_来往账目_20250326.md",
+      "docId": "raw_国泰君安_统一身份认证_来往账目_20250326",
+      "chunks": 9,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/太平洋保险_AI质检系统_技术架构设计_20240709.md",
+      "docId": "raw_太平洋保险_AI质检系统_技术架构设计_20240709",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 9,
+      "warnings": [
+        "raw_太平洋保险_AI质检系统_技术架构设计_20240709_1: high wikiLink density (42.0%)",
+        "raw_太平洋保险_AI质检系统_技术架构设计_20240709_2: high wikiLink density (45.4%)",
+        "raw_太平洋保险_AI质检系统_技术架构设计_20240709_3: high wikiLink density (39.4%)",
+        "raw_太平洋保险_AI质检系统_技术架构设计_20240709_4: high wikiLink density (40.8%)",
+        "raw_太平洋保险_AI质检系统_技术架构设计_20240709_5: high wikiLink density (46.2%)",
+        "raw_太平洋保险_AI质检系统_技术架构设计_20240709_6: high wikiLink density (41.3%)",
+        "raw_太平洋保险_AI质检系统_技术架构设计_20240709_7: high wikiLink density (38.4%)",
+        "raw_太平洋保险_AI质检系统_技术架构设计_20240709_8: high wikiLink density (30.6%)",
+        "raw_太平洋保险_AI质检系统_技术架构设计_20240709_9: high wikiLink density (32.9%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/太平洋保险_电子签章系统_客户项目验收_20250803.md",
+      "docId": "raw_太平洋保险_电子签章系统_客户项目验收_20250803",
+      "chunks": 8,
+      "hardRejected": 0,
+      "softWarned": 3,
+      "warnings": [
+        "raw_太平洋保险_电子签章系统_客户项目验收_20250803_1: high wikiLink density (47.2%)",
+        "raw_太平洋保险_电子签章系统_客户项目验收_20250803_2: high wikiLink density (31.7%)",
+        "raw_太平洋保险_电子签章系统_客户项目验收_20250803_4: high wikiLink density (32.5%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/宝武钢铁_微服务架构改造_项目管理计划_20241109.md",
+      "docId": "raw_宝武钢铁_微服务架构改造_项目管理计划_20241109",
+      "chunks": 13,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_宝武钢铁_微服务架构改造_项目管理计划_20241109_1: high wikiLink density (40.4%)",
+        "raw_宝武钢铁_微服务架构改造_项目管理计划_20241109_2: high wikiLink density (30.8%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/宝武钢铁_统一身份认证_项目费用结算_20250709.md",
+      "docId": "raw_宝武钢铁_统一身份认证_项目费用结算_20250709",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/招商局集团_数字孪生平台_需求规格说明书_20260620.md",
+      "docId": "raw_招商局集团_数字孪生平台_需求规格说明书_20260620",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0.00032690421706440013
+    },
+    {
+      "docPath": "Raw/招商局集团_数据中台_技术架构设计_20260620.md",
+      "docId": "raw_招商局集团_数据中台_技术架构设计_20260620",
+      "chunks": 8,
+      "hardRejected": 0,
+      "softWarned": 2,
+      "warnings": [
+        "raw_招商局集团_数据中台_技术架构设计_20260620_2: high wikiLink density (42.1%)",
+        "raw_招商局集团_数据中台_技术架构设计_20260620_7: high wikiLink density (31.5%)"
+      ],
+      "cleaningRatio": 0.00020437359493153485
+    },
+    {
+      "docPath": "Raw/招商局集团_智慧港口_大型台账_20260620.md",
+      "docId": "raw_招商局集团_智慧港口_大型台账_20260620",
+      "chunks": 3,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_招商局集团_智慧港口_大型台账_20260620_2: high wikiLink density (36.6%)"
+      ],
+      "cleaningRatio": 0.00018982536066818528
+    },
+    {
+      "docPath": "Raw/招商局集团_智慧港口_技术方案_20260620.md",
+      "docId": "raw_招商局集团_智慧港口_技术方案_20260620",
+      "chunks": 3,
+      "hardRejected": 0,
+      "softWarned": 3,
+      "warnings": [
+        "raw_招商局集团_智慧港口_技术方案_20260620_0: high wikiLink density (55.1%)",
+        "raw_招商局集团_智慧港口_技术方案_20260620_1: high wikiLink density (46.4%)",
+        "raw_招商局集团_智慧港口_技术方案_20260620_2: high wikiLink density (34.4%)"
+      ],
+      "cleaningRatio": 0.0005070993914807302
+    },
+    {
+      "docPath": "Raw/招商局集团_智慧港口_来往账目_20260620.md",
+      "docId": "raw_招商局集团_智慧港口_来往账目_20260620",
+      "chunks": 4,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0.00014484356894553882
+    },
+    {
+      "docPath": "Raw/招商局集团_智慧港口_项目人员清单_20260620.md",
+      "docId": "raw_招商局集团_智慧港口_项目人员清单_20260620",
+      "chunks": 1,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0.000999000999000999
+    },
+    {
+      "docPath": "Raw/招商银行_OA办公系统_技术方案_20240427.md",
+      "docId": "raw_招商银行_OA办公系统_技术方案_20240427",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 6,
+      "warnings": [
+        "raw_招商银行_OA办公系统_技术方案_20240427_1: high wikiLink density (35.8%)",
+        "raw_招商银行_OA办公系统_技术方案_20240427_2: high wikiLink density (41.4%)",
+        "raw_招商银行_OA办公系统_技术方案_20240427_3: high wikiLink density (38.9%)",
+        "raw_招商银行_OA办公系统_技术方案_20240427_4: high wikiLink density (39.8%)",
+        "raw_招商银行_OA办公系统_技术方案_20240427_9: high wikiLink density (33.3%)",
+        "raw_招商银行_OA办公系统_技术方案_20240427_10: high wikiLink density (32.0%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/招商银行_数据中台_技术方案_20240405.md",
+      "docId": "raw_招商银行_数据中台_技术方案_20240405",
+      "chunks": 13,
+      "hardRejected": 0,
+      "softWarned": 7,
+      "warnings": [
+        "raw_招商银行_数据中台_技术方案_20240405_2: high wikiLink density (35.7%)",
+        "raw_招商银行_数据中台_技术方案_20240405_3: high wikiLink density (35.1%)",
+        "raw_招商银行_数据中台_技术方案_20240405_4: high wikiLink density (38.5%)",
+        "raw_招商银行_数据中台_技术方案_20240405_5: high wikiLink density (43.0%)",
+        "raw_招商银行_数据中台_技术方案_20240405_9: high wikiLink density (43.2%)",
+        "raw_招商银行_数据中台_技术方案_20240405_11: high wikiLink density (33.2%)",
+        "raw_招商银行_数据中台_技术方案_20240405_12: high wikiLink density (32.2%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/浦发银行_云原生迁移_项目管理计划_20241018.md",
+      "docId": "raw_浦发银行_云原生迁移_项目管理计划_20241018",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 5,
+      "warnings": [
+        "raw_浦发银行_云原生迁移_项目管理计划_20241018_1: high wikiLink density (37.5%)",
+        "raw_浦发银行_云原生迁移_项目管理计划_20241018_2: high wikiLink density (31.1%)",
+        "raw_浦发银行_云原生迁移_项目管理计划_20241018_6: high wikiLink density (30.3%)",
+        "raw_浦发银行_云原生迁移_项目管理计划_20241018_9: high wikiLink density (42.7%)",
+        "raw_浦发银行_云原生迁移_项目管理计划_20241018_10: high wikiLink density (31.4%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/浦发银行_供应链管理平台_系统测试报告_20250927.md",
+      "docId": "raw_浦发银行_供应链管理平台_系统测试报告_20250927",
+      "chunks": 9,
+      "hardRejected": 0,
+      "softWarned": 4,
+      "warnings": [
+        "raw_浦发银行_供应链管理平台_系统测试报告_20250927_0: high wikiLink density (31.3%)",
+        "raw_浦发银行_供应链管理平台_系统测试报告_20250927_1: high wikiLink density (34.3%)",
+        "raw_浦发银行_供应链管理平台_系统测试报告_20250927_2: high wikiLink density (31.5%)",
+        "raw_浦发银行_供应链管理平台_系统测试报告_20250927_5: high wikiLink density (37.4%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/浦发银行_微服务架构改造_客户项目验收_20240408.md",
+      "docId": "raw_浦发银行_微服务架构改造_客户项目验收_20240408",
+      "chunks": 7,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_浦发银行_微服务架构改造_客户项目验收_20240408_1: high wikiLink density (38.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/浦发银行_智慧园区平台_技术架构设计_20251024.md",
+      "docId": "raw_浦发银行_智慧园区平台_技术架构设计_20251024",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 9,
+      "warnings": [
+        "raw_浦发银行_智慧园区平台_技术架构设计_20251024_1: high wikiLink density (40.0%)",
+        "raw_浦发银行_智慧园区平台_技术架构设计_20251024_2: high wikiLink density (36.2%)",
+        "raw_浦发银行_智慧园区平台_技术架构设计_20251024_3: high wikiLink density (35.7%)",
+        "raw_浦发银行_智慧园区平台_技术架构设计_20251024_4: high wikiLink density (36.5%)",
+        "raw_浦发银行_智慧园区平台_技术架构设计_20251024_5: high wikiLink density (45.7%)",
+        "raw_浦发银行_智慧园区平台_技术架构设计_20251024_6: high wikiLink density (45.4%)",
+        "raw_浦发银行_智慧园区平台_技术架构设计_20251024_7: high wikiLink density (51.6%)",
+        "raw_浦发银行_智慧园区平台_技术架构设计_20251024_8: high wikiLink density (44.9%)",
+        "raw_浦发银行_智慧园区平台_技术架构设计_20251024_9: high wikiLink density (32.6%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/浦发银行_财务共享中心_项目人员清单_20240514.md",
+      "docId": "raw_浦发银行_财务共享中心_项目人员清单_20240514",
+      "chunks": 10,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_浦发银行_财务共享中心_项目人员清单_20240514_4: high wikiLink density (30.5%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/碧桂园_CRM系统_项目进度汇报_20250709.md",
+      "docId": "raw_碧桂园_CRM系统_项目进度汇报_20250709",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_碧桂园_CRM系统_项目进度汇报_20250709_4: high wikiLink density (34.0%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/碧桂园_OA办公系统_客户项目验收_20240608.md",
+      "docId": "raw_碧桂园_OA办公系统_客户项目验收_20240608",
+      "chunks": 5,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_碧桂园_OA办公系统_客户项目验收_20240608_1: high wikiLink density (47.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/碧桂园_大数据分析平台_来往账目_20260128.md",
+      "docId": "raw_碧桂园_大数据分析平台_来往账目_20260128",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/碧桂园_物联网管理平台_项目费用结算_20240122.md",
+      "docId": "raw_碧桂园_物联网管理平台_项目费用结算_20240122",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/碧桂园_电子签章系统_来往账目_20250324.md",
+      "docId": "raw_碧桂园_电子签章系统_来往账目_20250324",
+      "chunks": 14,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/碧桂园_财务共享中心_项目人员清单_20241127.md",
+      "docId": "raw_碧桂园_财务共享中心_项目人员清单_20241127",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/融创中国_ERP系统_项目管理计划_20250505.md",
+      "docId": "raw_融创中国_ERP系统_项目管理计划_20250505",
+      "chunks": 14,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/融创中国_数据中台_项目进度汇报_20260805.md",
+      "docId": "raw_融创中国_数据中台_项目进度汇报_20260805",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_融创中国_数据中台_项目进度汇报_20260805_5: high wikiLink density (33.1%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/融创中国_智慧园区平台_项目管理计划_20250428.md",
+      "docId": "raw_融创中国_智慧园区平台_项目管理计划_20250428",
+      "chunks": 12,
+      "hardRejected": 0,
+      "softWarned": 5,
+      "warnings": [
+        "raw_融创中国_智慧园区平台_项目管理计划_20250428_2: high wikiLink density (35.1%)",
+        "raw_融创中国_智慧园区平台_项目管理计划_20250428_3: high wikiLink density (40.9%)",
+        "raw_融创中国_智慧园区平台_项目管理计划_20250428_4: high wikiLink density (35.7%)",
+        "raw_融创中国_智慧园区平台_项目管理计划_20250428_5: high wikiLink density (36.7%)",
+        "raw_融创中国_智慧园区平台_项目管理计划_20250428_9: high wikiLink density (35.9%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/融创中国_移动办公APP_客户项目验收_20260525.md",
+      "docId": "raw_融创中国_移动办公APP_客户项目验收_20260525",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 3,
+      "warnings": [
+        "raw_融创中国_移动办公APP_客户项目验收_20260525_1: high wikiLink density (36.8%)",
+        "raw_融创中国_移动办公APP_客户项目验收_20260525_2: high wikiLink density (31.0%)",
+        "raw_融创中国_移动办公APP_客户项目验收_20260525_4: high wikiLink density (35.6%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/融创中国_财务共享中心_技术架构设计_20240225.md",
+      "docId": "raw_融创中国_财务共享中心_技术架构设计_20240225",
+      "chunks": 11,
+      "hardRejected": 0,
+      "softWarned": 10,
+      "warnings": [
+        "raw_融创中国_财务共享中心_技术架构设计_20240225_1: high wikiLink density (40.9%)",
+        "raw_融创中国_财务共享中心_技术架构设计_20240225_2: high wikiLink density (45.0%)",
+        "raw_融创中国_财务共享中心_技术架构设计_20240225_3: high wikiLink density (45.9%)",
+        "raw_融创中国_财务共享中心_技术架构设计_20240225_4: high wikiLink density (46.8%)",
+        "raw_融创中国_财务共享中心_技术架构设计_20240225_5: high wikiLink density (42.4%)",
+        "raw_融创中国_财务共享中心_技术架构设计_20240225_6: high wikiLink density (35.0%)",
+        "raw_融创中国_财务共享中心_技术架构设计_20240225_7: high wikiLink density (34.2%)",
+        "raw_融创中国_财务共享中心_技术架构设计_20240225_8: high wikiLink density (37.3%)",
+        "raw_融创中国_财务共享中心_技术架构设计_20240225_9: high wikiLink density (36.0%)",
+        "raw_融创中国_财务共享中心_技术架构设计_20240225_10: high wikiLink density (33.3%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/龙湖集团_人力资源系统_技术架构设计_20240925.md",
+      "docId": "raw_龙湖集团_人力资源系统_技术架构设计_20240925",
+      "chunks": 10,
+      "hardRejected": 0,
+      "softWarned": 10,
+      "warnings": [
+        "raw_龙湖集团_人力资源系统_技术架构设计_20240925_0: high wikiLink density (41.8%)",
+        "raw_龙湖集团_人力资源系统_技术架构设计_20240925_1: high wikiLink density (48.4%)",
+        "raw_龙湖集团_人力资源系统_技术架构设计_20240925_2: high wikiLink density (40.9%)",
+        "raw_龙湖集团_人力资源系统_技术架构设计_20240925_3: high wikiLink density (35.8%)",
+        "raw_龙湖集团_人力资源系统_技术架构设计_20240925_4: high wikiLink density (38.8%)",
+        "raw_龙湖集团_人力资源系统_技术架构设计_20240925_5: high wikiLink density (43.8%)",
+        "raw_龙湖集团_人力资源系统_技术架构设计_20240925_6: high wikiLink density (38.3%)",
+        "raw_龙湖集团_人力资源系统_技术架构设计_20240925_7: high wikiLink density (32.6%)",
+        "raw_龙湖集团_人力资源系统_技术架构设计_20240925_8: high wikiLink density (35.6%)",
+        "raw_龙湖集团_人力资源系统_技术架构设计_20240925_9: high wikiLink density (31.6%)"
+      ],
+      "cleaningRatio": 0.01990521327014218
+    },
+    {
+      "docPath": "Raw/龙湖集团_人力资源系统_来往账目_20250525.md",
+      "docId": "raw_龙湖集团_人力资源系统_来往账目_20250525",
+      "chunks": 7,
+      "hardRejected": 0,
+      "softWarned": 0,
+      "warnings": [],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/龙湖集团_人力资源系统_项目进度汇报_20250708.md",
+      "docId": "raw_龙湖集团_人力资源系统_项目进度汇报_20250708",
+      "chunks": 6,
+      "hardRejected": 0,
+      "softWarned": 1,
+      "warnings": [
+        "raw_龙湖集团_人力资源系统_项目进度汇报_20250708_1: high wikiLink density (31.5%)"
+      ],
+      "cleaningRatio": 0
+    },
+    {
+      "docPath": "Raw/龙湖集团_供应链管理平台_技术架构设计_20261120.md",
+      "docId": "raw_龙湖集团_供应链管理平台_技术架构设计_20261120",
+      "chunks": 13,
+      "hardRejected": 0,
+      "softWarned": 11,
+      "warnings": [
+        "raw_龙湖集团_供应链管理平台_技术架构设计_20261120_1: high wikiLink density (43.3%)",
+        "raw_龙湖集团_供应链管理平台_技术架构设计_20261120_2: high wikiLink density (42.1%)",
+        "raw_龙湖集团_供应链管理平台_技术架构设计_20261120_3: high wikiLink density (30.4%)",
+        "raw_龙湖集团_供应链管理平台_技术架构设计_20261120_5: high wikiLink density (30.1%)",
+        "raw_龙湖集团_供应链管理平台_技术架构设计_20261120_6: high wikiLink density (35.5%)",
+        "raw_龙湖集团_供应链管理平台_技术架构设计_20261120_7: high wikiLink density (35.8%)",
+        "raw_龙湖集团_供应链管理平台_技术架构设计_20261120_8: high wikiLink density (39.9%)",
+        "raw_龙湖集团_供应链管理平台_技术架构设计_20261120_9: high wikiLink density (37.7%)",
+        "raw_龙湖集团_供应链管理平台_技术架构设计_20261120_10: high wikiLink density (39.4%)",
+        "raw_龙湖集团_供应链管理平台_技术架构设计_20261120_11: high wikiLink density (37.3%)",
+        "raw_龙湖集团_供应链管理平台_技术架构设计_20261120_12: high wikiLink density (32.6%)"
+      ],
+      "cleaningRatio": 0
+    }
+  ],
+  "distribution": {
+    "chunkSizes": {
+      "min": 28,
+      "max": 4712,
+      "avg": 260,
+      "p50": 68,
+      "p95": 1100
+    },
+    "chunksPerDoc": {
+      "min": 1,
+      "max": 15,
+      "avg": "1.3"
+    }
+  }
+}

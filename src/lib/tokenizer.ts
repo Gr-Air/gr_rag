@@ -66,7 +66,7 @@ export function getJieba(): Jieba {
 }
 
 /**
- * 中文分词
+ * 中文分词（去重，供查询侧使用）
  * @param text 待分词文本
  * @returns 分词结果（去重、过滤空串）
  */
@@ -84,6 +84,25 @@ export function tokenize(text: string): string[] {
   }
 
   return [...tokens];
+}
+
+/**
+ * 中文分词（不去重，保留词频信息，供索引构建侧使用）
+ * 用于统计准确的 TF（词频）和文档词数
+ * @param text 待分词文本
+ * @returns 分词结果（保留顺序、不去重、过滤空串）
+ */
+export function tokenizeAll(text: string): string[] {
+  const jieba = getJieba();
+  const result = jieba.cut(text, false);
+  const tokens: string[] = [];
+  for (const token of result) {
+    const trimmed = token.trim();
+    if (trimmed.length >= 1) {
+      tokens.push(trimmed);
+    }
+  }
+  return tokens;
 }
 
 /**

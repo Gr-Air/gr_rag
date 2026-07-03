@@ -125,7 +125,7 @@ async function bruteForceSearch(
       return { chunkId: row.id, score: sim, parentDocId: row.parentDocId || undefined };
     });
 
-    return results.sort((a, b) => b.score - a.score).slice(0, topK);
+    return results.sort((a: { chunkId: string; score: number }, b: { chunkId: string; score: number }) => b.score - a.score).slice(0, topK);
   } catch (err: any) {
     console.error('[vectorSearch] 暴力搜索失败:', err.message);
     return [];

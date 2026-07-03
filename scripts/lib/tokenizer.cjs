@@ -56,7 +56,7 @@ function getJieba() {
 }
 
 /**
- * 对文本进行 jieba 分词
+ * 对文本进行 jieba 分词（去重，供查询侧使用）
  * @param {string} text
  * @returns {string[]} 去重后的词条列表
  */
@@ -71,8 +71,26 @@ function tokenize(text) {
   return [...tokens];
 }
 
+/**
+ * 对文本进行 jieba 分词（不去重，保留词频信息，供索引构建侧使用）
+ * 用于统计准确的 TF（词频）和文档词数
+ * @param {string} text
+ * @returns {string[]} 保留顺序的分词结果列表（不去重）
+ */
+function tokenizeAll(text) {
+  const jieba = getJieba();
+  const result = jieba.cut(text, false);
+  const tokens = [];
+  for (const token of result) {
+    const trimmed = token.trim();
+    if (trimmed.length >= 1) tokens.push(trimmed);
+  }
+  return tokens;
+}
+
 module.exports = {
   tokenize,
+  tokenizeAll,
   getJieba,
   CUSTOM_WORDS,
 };

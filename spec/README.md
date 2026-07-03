@@ -82,6 +82,14 @@ spec/
 | 5 | 硬编码路由规则覆盖增强 | ✅ implemented → [003](implemented/003-smartrouter-cleanup-fallback.md) | isFollowUpQuery, smartRouter, indexLookup, adaptiveWindow | 2026-06-11 |
 | 6 | 实体提取缓存优化 | 📋 planned | queryRewriter, entityRouter | 2026-06-08 |
 | 7 | [smartRouter 死代码清理 + 正则降级合一](implemented/003-smartrouter-cleanup-fallback.md) | ✅ implemented | smartRouter, queryRewriter, structSearchEngine, chat/route | 2026-06-11 |
+| 8 | [BM25 分词去重导致 TF 恒为 1 修复](implemented/004-bm25-tf-dedup-fix.md) | ✅ implemented | tokenizer, buildIndex, buildIncremental, bm25Engine | 2026-06-11 |
+| 9 | [前端增加全量索引构建入口](planned/008-frontend-index-rebuild-button.md) | 📋 planned | page.tsx, api/index/rebuild, indexManager | 2026-06-11 |
+| 10 | [结构化数据库 NL2SQL 查询能力讨论](planned/009-structured-db-nl2sql-discussion.md) | 📋 planned | structSearchEngine, chat/route, nl2sql | 2026-06-18 |
+| 11 | [SQLAlchemy 校验能否提升准确性讨论](planned/010-sqlalchemy-validation-discussion.md) | 📋 planned | structSearchEngine, nl2sqlEngine, chat/route | 2026-06-18 |
+| 12 | [文档清洗切分流水线方案讨论](planned/011-document-cleaning-pipeline-discussion.md) | ✅ implemented (Stage 1) | cleaner, chunker, scanner, staging, clean-and-chunk | 2026-06-20 |
+| 13 | [Markdown vs HTML 文档格式切分讨论](planned/012-markdown-vs-html-chunking-discussion.md) | 📋 planned | chunker, cleaner | 2026-06-20 |
+| 14 | [结构化数据库实体提取能力差距讨论](planned/013-entity-extraction-gap-discussion.md) | 📋 planned | buildStructDb, entityExtractor, staging | 2026-06-22 |
+| 15 | [前端极简化 — 首页即对话框](implemented/015-minimal-chat-homepage.md) | ✅ implemented | layout.tsx, page.tsx | 2026-06-23 |
 
 ---
 

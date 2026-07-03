@@ -8,8 +8,7 @@
 // ============================================================
 
 import OpenAI from 'openai';
-import fs from 'fs';
-import path from 'path';
+import type { KnownEntityInfo } from './structSearchEngine';
 
 // ============================================================
 // 类型定义
@@ -48,29 +47,61 @@ export interface LlmRouteDecision {
 }
 
 // ============================================================
-// 实体关键词缓存（从 Wiki 目录加载，用于 prompt 和 fallback 校验）
+// 实体关键词缓存（从 SQLite 加载，用于 prompt 和 fallback 校验）
 // ============================================================
 
-const WIKI_ROOT = path.join(process.cwd(), '..', 'Wiki');
-
 let knownEntitiesCache: string[] | null = null;
+let knownEntitiesWithMeta: import('./structSearchEngine').KnownEntityInfo[] | null = null;
 
-/** 加载所有已知实体/概念名称 */
-function loadKnownEntities(): string[] {
-  if (knownEntitiesCache) return knownEntitiesCache;
+/** 从 SQLite 加载所有已知实体/概念名称及元信息 */
+function loadKnownEntitiesWithMeta(): import('./structSearchEngine').KnownEntityInfo[] {
+  if (knownEntitiesWithMeta) return knownEntitiesWithMeta;
 
-  const entities: string[] = [];
-  for (const sub of ['entity', 'concept']) {
-    const dir = path.join(WIKI_ROOT, sub);
-    if (!fs.existsSync(dir)) continue;
-    for (const file of fs.readdirSync(dir)) {
-      if (!file.endsWith('.md')) continue;
-      entities.push(file.replace(/\.md$/, ''));
+  try {
+    const { getKnownEntityNames, isStructDbReady } = require('./structSearchEngine');
+    if (isStructDbReady()) {
+      knownEntitiesWithMeta = getKnownEntityNames() as KnownEntityInfo[] | null;
+      if (knownEntitiesWithMeta) {
+        knownEntitiesCache = knownEntitiesWithMeta.map(e => e.name);
+        console.log(`[QueryRewriter] 从 SQLite 加载 ${knownEntitiesWithMeta.length} 个实体/概念`);
+        return knownEntitiesWithMeta;
+      }
     }
+  } catch (err) {
+    console.warn('[QueryRewriter] 无法从 SQLite 加载实体，降级为空列表:', err);
   }
 
-  knownEntitiesCache = [...new Set(entities)].sort((a, b) => b.length - a.length);
-  return knownEntitiesCache;
+  // SQLite 不可用时的降级
+  knownEntitiesWithMeta = [];
+  knownEntitiesCache = [];
+  return knownEntitiesWithMeta;
+}
+
+/** 加载所有已知实体/概念名称（纯名称列表，保持向后兼容） */
+function loadKnownEntities(): string[] {
+  if (knownEntitiesCache) return knownEntitiesCache;
+  loadKnownEntitiesWithMeta();
+  return knownEntitiesCache || [];
+}
+
+/**
+ * 实体分解：将未知实体分解为已知实体的组合
+ * 策略：从已知实体列表中查找所有是未知实体子串的实体
+ * 例如："南方电网供应链管理平台项目" → ["南方电网", "供应链管理平台"]
+ */
+function decomposeEntity(unknown: string, knownSet: Set<string>): string[] {
+  const results: string[] = [];
+  const unknownLower = unknown.toLowerCase();
+  
+  for (const known of knownSet) {
+    if (known.length >= 2 && unknownLower.includes(known)) {
+      if (!results.some(r => r.includes(known))) {
+        results.push(known);
+      }
+    }
+  }
+  
+  return results.sort((a, b) => b.length - a.length);
 }
 
 // ============================================================
@@ -81,13 +112,15 @@ function loadKnownEntities(): string[] {
  * 构建 LLM system prompt（动态注入已知实体列表作为参考 + 路由决策指令）
  */
 function buildRewritePrompt(): string {
-  const knownEntities = loadKnownEntities();
+  const entitiesWithMeta = loadKnownEntitiesWithMeta();
 
-  // 按类别分组：人员、客户企业、技术组件、项目系统、部门、概念
-  const personEntities = knownEntities.filter(e => /^[\u4e00-\u9fff]{2,4}$/.test(e) && !/[司行团院部中心]/.test(e));
-  const clientEntities = knownEntities.filter(e => /银行|保险|集团|证券|钢铁|地产|置地|船舶|万科|碧桂园|龙湖|华润|中钢|宝武|国家电网|中国航发|招商|太平洋|中信/.test(e));
-  const techEntities = knownEntities.filter(e => /^[A-Z]/.test(e) || /系统|平台|服务|架构|框架|中间件|数据库/.test(e));
-  const deptEntities = knownEntities.filter(e => /部$|中心$|团队$/.test(e));
+  // 按 SQLite 中的 category 字段分组
+  const personEntities = entitiesWithMeta.filter(e => e.category === '人员').map(e => e.name);
+  const clientEntities = entitiesWithMeta.filter(e => e.category === '客户企业').map(e => e.name);
+  const techEntities = entitiesWithMeta.filter(e => e.category === '技术组件').map(e => e.name);
+  const deptEntities = entitiesWithMeta.filter(e => e.category === '部门').map(e => e.name);
+  const conceptEntities = entitiesWithMeta.filter(e => e.type === 'concept').map(e => e.name);
+  const projectEntities = entitiesWithMeta.filter(e => e.category === '项目系统').map(e => e.name);
 
   // 取代表性样本（避免 prompt 过长）
   const sample = (arr: string[], max: number) => arr.slice(0, max).join('、');
@@ -102,8 +135,10 @@ function buildRewritePrompt(): string {
 已知的部分实体（供参考，用户可能使用同义词或简称）：
 - 客户企业：${sample(clientEntities, 15)}
 - 技术组件：${sample(techEntities, 15)}
+- 项目系统：${sample(projectEntities, 10)}
 - 人员：${sample(personEntities, 8)}
 - 部门：${sample(deptEntities, 8)}
+- 概念：${sample(conceptEntities, 10)}
 
 知识库的 index.md 包含以下章节可查询元信息：
 客户列表、文档类型、项目类型、概念索引、实体索引、客户企业、技术组件、项目系统、人员、部门、全部原始文档、知识库概览
@@ -222,7 +257,7 @@ export async function rewriteQuery(
 
     const parsed = JSON.parse(jsonMatch[0]);
 
-    // 校验 entities 是否在已知列表中（不在的也保留，可能是同义词）
+    // 校验 entities 是否在 SQLite 已知列表中（不在的也保留，可能是同义词）
     const knownSet = new Set(loadKnownEntities().map(e => e.toLowerCase()));
     const validatedEntities: string[] = [];
     const unknownEntities: string[] = [];
@@ -235,8 +270,19 @@ export async function rewriteQuery(
       }
     }
 
-    // 未知实体也保留（可能是用户用的别名，SQLite 可能匹配到）
-    const allEntities = [...validatedEntities, ...unknownEntities];
+    // 实体分解：当未知实体在已知列表中找不到时，尝试分解为更小的实体
+    // 例如："南方电网供应链管理平台项目" → ["南方电网", "供应链管理平台"]
+    const decomposedEntities: string[] = [];
+    for (const unknown of unknownEntities) {
+      const decomposed = decomposeEntity(unknown, knownSet);
+      if (decomposed.length > 0) {
+        decomposedEntities.push(...decomposed);
+        console.log(`[QueryRewriter] 实体分解: "${unknown}" → [${decomposed.join(', ')}]`);
+      }
+    }
+
+    // 合并所有实体（去重）
+    const allEntities = [...new Set([...validatedEntities, ...unknownEntities, ...decomposedEntities])];
 
     // 解析路由决策字段
     const route = ['structured', 'semantic', 'hybrid'].includes(parsed.route)

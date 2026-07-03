@@ -51,3 +51,14 @@ src/data/struct_kb.db
 # SQLite runtime artifacts
 *.db-shm
 *.db-wal
+
+# RAGAS 评估辅助脚本和测试数据（不提交到 GitHub）
+test/rag-eval/generate_test_set.py
+test/rag-eval/test_*.py
+test/rag-eval/test_*.json
+test/rag-eval/.venv/
+test/rag-eval/venv/
+test/rag-eval/__pycache__/
+test/rag-eval/results/
+test/rag-eval/report_*.json
+test/rag-eval/summary_*.md

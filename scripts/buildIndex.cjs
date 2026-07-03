@@ -15,7 +15,7 @@ const { loadEnv } = require('./lib/envLoader.cjs');
 loadEnv();
 
 // 公共模块
-const { tokenize } = require('./lib/tokenizer.cjs');
+const { tokenizeAll } = require('./lib/tokenizer.cjs');
 const { getEmbeddingsBatch } = require('./lib/embedder.cjs');
 const { chunkDocument, buildWikiChunk, extractTitle, parseFilename } = require('./lib/chunker.cjs');
 const { scanAll } = require('./lib/scanner.cjs');
@@ -70,11 +70,7 @@ async function main() {
     if ((fi + 1) % 20 === 0) console.log(`  已解析 ${fi + 1}/${rawDocs.length}`);
   }
 
-  // Wiki 词条
-  console.log('  添加 Wiki 词条...');
-  for (const entry of wikiEntries) {
-    allChunks.push(buildWikiChunk(entry.name, entry.type, entry.file, entry.content));
-  }
+  
   console.log(`  ✅ 共 ${allChunks.length} 个文档块`);
   logMem('after parse');
 
@@ -158,7 +154,7 @@ async function main() {
 
   for (let i = 0; i < allChunks.length; i++) {
     const c = allChunks[i];
-    const tokens = tokenize(c.content);
+    const tokens = tokenizeAll(c.content);
     docLengths[c.id] = tokens.length;
 
     const tfMap = new Map();

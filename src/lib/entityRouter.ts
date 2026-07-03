@@ -13,34 +13,33 @@ import { DocChunk, SearchResult } from './types';
 import { hybridSearch } from './hybridSearch';
 
 // ============================================================
-// 实体关键字加载
+// 实体关键字加载（从 SQLite 加载，按频次排序）
 // ============================================================
-
-const WIKI_ROOT = path.join(process.cwd(), '..', 'Wiki');
 
 let entityKeywords: string[] | null = null;
 let keywordSet: Set<string> | null = null;
 
-/** 加载所有实体/概念词条名 */
+/** 从 SQLite 加载所有实体/概念词条名 */
 export function loadEntityKeywords(): string[] {
   if (entityKeywords) return entityKeywords;
 
-  const keywords: string[] = [];
-
-  for (const sub of ['concept', 'entity']) {
-    const dir = path.join(WIKI_ROOT, sub);
-    if (!fs.existsSync(dir)) continue;
-    for (const file of fs.readdirSync(dir)) {
-      if (!file.endsWith('.md')) continue;
-      const name = file.replace(/\.md$/, '');
-      if (name.length >= 1) keywords.push(name);
+  try {
+    const { getKnownEntityNames, isStructDbReady } = require('./structSearchEngine');
+    if (isStructDbReady()) {
+      const entities = getKnownEntityNames() as { name: string }[];
+      // 按长度降序排列，确保最长匹配优先（贪心匹配需要）
+      const keywords = entities.map((e: { name: string }) => e.name).sort((a: string, b: string) => b.length - a.length);
+      entityKeywords = keywords;
+      keywordSet = new Set(keywords);
+      console.log(`[EntityRouter] 从 SQLite 加载 ${keywords.length} 个实体关键字`);
+      return keywords;
     }
+  } catch (err) {
+    console.warn('[EntityRouter] 无法从 SQLite 加载实体，降级为空列表:', err);
   }
 
-  // 按长度降序排列，确保最长匹配优先
-  entityKeywords = keywords.sort((a, b) => b.length - a.length);
-  keywordSet = new Set(entityKeywords);
-  console.log(`[EntityRouter] 加载 ${entityKeywords.length} 个实体关键字`);
+  entityKeywords = [];
+  keywordSet = new Set();
   return entityKeywords;
 }
 
@@ -312,24 +311,24 @@ export async function routedSearch(
     // 多路召回：尝试结构化数据库查询
     // ================================================================
     try {
-      const { isStructDbReady } = await import('./structSearchEngine');
-
-      // 动态导入 smartRouter（避免循环依赖）
-      const { smartRoute, executeStructuredQuery, formatStructResults } = await import('./smartRouter');
+      const { isStructDbReady, executeStructuredQuery, formatStructResults } = await import('./structSearchEngine');
 
       if (isStructDbReady()) {
-        // 用 LLM 智能路由判断走哪条路
-        const routeResult = await smartRoute(query, {
+        // 用 LLM 智能路由判断走哪条路（从 queryRewriter 获取路由决策）
+        const { smartRewrite } = await import('./queryRewriter');
+        const rewriteResult = await smartRewrite(query, {
           apiKey: options?.apiKey,
           baseURL: options?.baseURL,
           model: options?.model,
         });
 
-        console.log(`[EntityRouter] 智能路由决策: ${routeResult.decision} (${routeResult.reason})`);
+        const routeDecision = rewriteResult.routeDecision;
+        const route = routeDecision?.route || (rewriteResult.entities.length > 0 ? 'hybrid' : 'semantic');
+        console.log(`[EntityRouter] 智能路由决策: ${route} (entities: ${rewriteResult.entities.join(', ') || '无'})`);
 
-        if (routeResult.decision === 'structured') {
+        if (route === 'structured') {
           // 纯结构化查询：从 SQLite 查关联文档列表，不碰向量库
-          const structResults = await executeStructuredQuery(routeResult.matchedEntries || matched, 'or');
+          const structResults = await executeStructuredQuery(rewriteResult.entities.length > 0 ? rewriteResult.entities : matched, 'or');
           const structSummary = formatStructResults(structResults);
 
           if (structResults.length > 0 && structSummary) {
@@ -337,15 +336,16 @@ export async function routedSearch(
             return {
               results: [],
               method: 'structured',
-              matchedKeywords: routeResult.matchedEntries || matched,
+              matchedKeywords: rewriteResult.entities.length > 0 ? rewriteResult.entities : matched,
               structSummary,
             };
           }
         }
 
-        if (routeResult.decision === 'hybrid') {
+        if (route === 'hybrid') {
           // 混合检索：结构化结果 + RRF 结果融合
-          const structResults = await executeStructuredQuery(routeResult.matchedEntries || matched, 'or');
+          const queryEntries = rewriteResult.entities.length > 0 ? rewriteResult.entities : matched;
+          const structResults = await executeStructuredQuery(queryEntries, 'or');
           const structSummary = formatStructResults(structResults);
 
           // 结构化文档 chunk
@@ -368,7 +368,7 @@ export async function routedSearch(
           return {
             results: merged,
             method: 'hybrid',
-            matchedKeywords: routeResult.matchedEntries || matched,
+            matchedKeywords: queryEntries,
             structSummary,
           };
         }
@@ -416,7 +416,10 @@ export async function routedSearch(
 }
 
 /**
- * 从结构化查询结果加载对应的文档 chunk
+ * 从结构化查询结果加载对应的文档 chunk（两表结构版本）
+ * 支持两种来源：
+ *   1. Raw 文档：从 chunks_meta 加载具体 chunk
+ *   2. Wiki 词条：直接加载 Wiki 目录中的原始 markdown 文件
  */
 async function loadStructDocChunks(
   structResults: import('./structSearchEngine').StructSearchResult[],
@@ -424,49 +427,77 @@ async function loadStructDocChunks(
   topK: number
 ): Promise<SearchResult[]> {
   const allChunksData = loadAllChunks();
+  const wikiDir = path.join(process.cwd(), 'Wiki');
 
   const results: SearchResult[] = [];
-  const seenDocIds = new Set<string>();
+  const seenChunkIds = new Set<string>();
+  const seenEntryNames = new Set<string>();
 
   for (const sr of structResults) {
-    for (const doc of sr.documents) {
-      if (seenDocIds.has(doc.name)) continue;
-      seenDocIds.add(doc.name);
+    if (seenEntryNames.has(sr.entry.name)) continue;
+    seenEntryNames.add(sr.entry.name);
 
-      // 找到该文档在 chunks_meta 中的 chunk（格式: raw_{docName}_N）
-      const docId = `raw_${doc.name}`;
-      const docChunkIds = Object.keys(allChunksData).filter(k => k.startsWith(docId));
-      if (docChunkIds.length === 0) continue;
+    if (sr.entry.type === 'concept' && sr.entry.path) {
+      const wikiFilePath = path.join(wikiDir, sr.entry.path);
+      if (fs.existsSync(wikiFilePath)) {
+        const wikiContent = fs.readFileSync(wikiFilePath, 'utf-8');
+        
+        const chunk: DocChunk = {
+          id: `wiki_${sr.entry.name}`,
+          docId: `wiki_${sr.entry.name}`,
+          docTitle: sr.entry.name,
+          docPath: sr.entry.path,
+          chunkIndex: 0,
+          content: wikiContent,
+          metadata: {
+            docType: 'wiki',
+          },
+          wikiLinks: [],
+        };
 
-      // 选内容最丰富的 chunk（跳过元信息 chunk）
-      const chunks: DocChunk[] = docChunkIds
-        .map(id => {
-          const data = allChunksData[id];
-          if (!data) return null;
-          return {
-            id,
-            docId: data.docId,
-            docTitle: data.docTitle,
-            docPath: data.docPath,
-            chunkIndex: 0,
-            content: data.content,
-            metadata: data.metadata,
-            wikiLinks: data.wikiLinks || [],
-          };
-        })
-        .filter((c): c is DocChunk => c !== null)
-        .sort((a, b) => {
-          const aIsMeta = a.content.length < 100 || a.content.trim().startsWith('## 文档元信息');
-          const bIsMeta = b.content.length < 100 || b.content.trim().startsWith('## 文档元信息');
-          if (aIsMeta && !bIsMeta) return 1;
-          if (!aIsMeta && bIsMeta) return -1;
-          return b.content.length - a.content.length;
+        let highlight = wikiContent.slice(0, 500);
+        const matchedEntryNames = structResults.map(r => r.entry.name);
+        for (const kw of matchedEntryNames) {
+          try {
+            highlight = highlight.replace(
+              new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+              `**${kw}**`
+            );
+          } catch { /* ignore regex errors */ }
+        }
+
+        results.push({
+          chunk,
+          score: (sr.entry.frequency + 100) / 500,
+          source: 'entity',
+          highlight,
         });
 
-      if (chunks.length === 0) continue;
+        if (results.length >= topK) break;
+        continue;
+      }
+    }
 
-      const bestChunk = chunks[0];
-      let highlight = bestChunk.content.slice(0, 500);
+    for (const structChunk of sr.chunks) {
+      const chunkId = structChunk.chunk_id;
+      if (seenChunkIds.has(chunkId)) continue;
+      seenChunkIds.add(chunkId);
+
+      const chunkData = allChunksData[chunkId];
+      if (!chunkData) continue;
+
+      const chunk: DocChunk = {
+        id: chunkId,
+        docId: chunkData.docId,
+        docTitle: chunkData.docTitle,
+        docPath: chunkData.docPath,
+        chunkIndex: 0,
+        content: chunkData.content,
+        metadata: chunkData.metadata,
+        wikiLinks: chunkData.wikiLinks || [],
+      };
+
+      let highlight = chunk.content.slice(0, 500);
       const matchedEntryNames = structResults.map(r => r.entry.name);
       for (const kw of matchedEntryNames) {
         try {
@@ -478,8 +509,8 @@ async function loadStructDocChunks(
       }
 
       results.push({
-        chunk: bestChunk,
-        score: sr.entry.frequency / 500, // 基于词条频次归一化
+        chunk,
+        score: sr.entry.frequency / 500,
         source: 'entity',
         highlight,
       });
@@ -504,8 +535,7 @@ async function forceSearch(
 
   if (method === 'structured' || method === 'hybrid') {
     try {
-      const { isStructDbReady } = await import('./structSearchEngine');
-      const { executeStructuredQuery, formatStructResults } = await import('./smartRouter');
+      const { isStructDbReady, executeStructuredQuery, formatStructResults } = await import('./structSearchEngine');
 
       if (isStructDbReady() && matched.length > 0) {
         const structResults = await executeStructuredQuery(matched, 'or');

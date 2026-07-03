@@ -180,9 +180,9 @@ export async function* ragChatStream(
 
   // Step 1.6: Rerank 重排序（语义相关性精排，仅用于 LLM prompt，不影响前端展示）
   let promptResults = searchResults;
-  if (searchResults.length > 5) {
+  if (searchResults.length > 3) {
     try {
-      const rerankedResults = await rerank(query, searchResults, 5);
+      const rerankedResults = await rerank(query, searchResults, 3);
       if (rerankedResults.length > 0) {
         console.log(`[RAG] Rerank 重排序: ${searchResults.length} → ${rerankedResults.length} 个文档块（仅影响 LLM prompt）`);
         promptResults = rerankedResults;
@@ -299,71 +299,4 @@ async function* noLLMFallback(
     content: '\n> 💡 **提示**：点击右上角「设置」配置 LLM API Key（兼容 OpenAI API），即可启用 AI 智能问答，由 LLM 基于以上文档内容生成精准回答。',
   };
   yield { type: 'done' };
-}
-
-/** 非流式 RAG 回答 */
-export async function ragChat(
-  query: string,
-  options?: {
-    apiKey?: string;
-    baseURL?: string;
-    model?: string;
-    topK?: number;
-    conversationContext?: string;
-    isFollowUp?: boolean;
-  }
-): Promise<{ answer: string; results: SearchResult[] }> {
-  const topK = options?.topK || 5;
-  const apiKey = options?.apiKey || process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || '';
-  const baseURL = options?.baseURL || process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL || '';
-  const model = options?.model || process.env.LLM_MODEL || 'gpt-3.5-turbo';
-
-  const searchResults = await hybridSearch(query, topK, 20, 20, {
-    matchedKeywords: undefined,
-  });
-
-  if (searchResults.length === 0) {
-    return { answer: '未找到相关文档', results: [] };
-  }
-
-  if (!apiKey) {
-    const parts = searchResults.map((r, i) => {
-      const meta = r.chunk.metadata;
-      const metaSource = [meta.client, meta.project, meta.docType].filter(Boolean).join(' | ') || '知识库';
-      return `**${r.chunk.docTitle}** (${metaSource})\n${r.chunk.content.slice(0, 300)}...`;
-    });
-    return {
-      answer: `⚠️ 未配置 LLM API Key\n\n相关文档:\n\n${parts.join('\n\n---\n\n')}`,
-      results: searchResults,
-    };
-  }
-
-  const { systemPrompt, userPrompt } = buildRAGPrompt(query, searchResults, {
-    conversationContext: options?.conversationContext,
-    isFollowUp: options?.isFollowUp,
-  });
-
-  try {
-    const client = new OpenAI({
-      apiKey,
-      baseURL: baseURL || undefined,
-    });
-
-    const isReasoningModel = model.toLowerCase().includes('mimo') || model.toLowerCase().includes('reasoning');
-
-    const response = await client.chat.completions.create({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      ...(isReasoningModel ? {} : { temperature: 0.3 }),
-    });
-
-    const answer = response.choices[0]?.message?.content
-      || '未能生成回答';
-    return { answer, results: searchResults };
-  } catch (err: any) {
-    return { answer: `LLM 调用失败: ${err.message}`, results: searchResults };
-  }
 }

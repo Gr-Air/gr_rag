@@ -290,8 +290,11 @@ async function loadEntityDocsContent(
   // 2. 收集所有关联文档名（去重）
   const docNames = new Set<string>();
   for (const r of structResults) {
-    for (const doc of r.documents) {
-      docNames.add(doc.name);
+    for (const chunk of r.chunks) {
+      const docId = chunk.chunk_id.replace(/_\d+$/, '');
+      if (docId.startsWith('raw_')) {
+        docNames.add(docId.slice(4));
+      }
     }
   }
 

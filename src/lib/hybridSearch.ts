@@ -21,6 +21,9 @@ const PARENTS_DIR = path.join(DATA_DIR, 'parents');
 /** RRF 融合参数 */
 const RRF_K = 60; // RRF 平滑参数
 
+/** 实体匹配度权重（提升包含查询实体的文档优先级） */
+const ENTITY_MATCH_WEIGHT = 0.2; // 每个匹配实体增加 0.2 的额外分数
+
 /**
  * RRF (Reciprocal Rank Fusion) 算法
  * 
@@ -121,6 +124,25 @@ export async function hybridSearch(
   console.log(`[Hybrid] 查询: "${query}", topK=${topK}`);
 
   const matchedKeywords = options?.matchedKeywords;
+
+  // 查询类型识别和动态 topK
+  // 宽泛查询（如"相关的项目文档有哪些？"）使用更小的 topK，避免召回过多不相关上下文
+  // 具体查询（如"项目经理是谁？"）保持原有 topK
+  const broadQueryPatterns = [
+    /相关的.*文档有哪些/,
+    /有哪些.*项目/,
+    /包含.*的文档/,
+    /涉及.*的项目/,
+    /哪些.*文档/,
+    /哪些.*项目/,
+    /有.*多少.*文档/,
+    /有.*多少.*项目/,
+  ];
+  const isBroadQuery = broadQueryPatterns.some(p => p.test(query));
+  if (isBroadQuery && topK > 3) {
+    console.log(`[Hybrid] 检测到宽泛查询，topK 从 ${topK} 调整为 3`);
+    topK = 3;
+  }
 
   // Step 1: 并行执行向量检索和 BM25 检索
   const [vectorResults, bm25Results] = await Promise.all([
@@ -237,6 +259,30 @@ export async function hybridSearch(
           bm25Rank: mergedBm25Rank,
         });
       }
+    }
+  }
+
+  
+
+  // Step 4.7: 实体匹配度评分（提升包含查询实体的文档优先级）
+  // 问题场景：
+  // - 查询"国家电网物联网管理平台" → 召回了"物联网管理平台"概念（定义是碧桂园项目）
+  // - 查询"中国联通OA办公系统" → 召回了"中信证券OA办公系统"（客户错误）
+  // 解决方案：计算每个文档包含多少个查询实体关键词，给予额外分数加成
+  let entityBoostedCount = 0;
+  if (matchedKeywords && matchedKeywords.length > 0) {
+    for (const [docId, entry] of docBestChunk) {
+      const content = entry.chunk.content;
+      const matchedCount = matchedKeywords.filter(kw => content.includes(kw)).length;
+      if (matchedCount > 0) {
+        const entityBonus = matchedCount * ENTITY_MATCH_WEIGHT;
+        entry.rrfScore += entityBonus;
+        entityBoostedCount++;
+        console.log(`[Hybrid] 实体匹配度加成: [${docId}] 匹配 ${matchedCount} 个实体关键词，+${entityBonus} 分数`);
+      }
+    }
+    if (entityBoostedCount > 0) {
+      console.log(`[Hybrid] 实体匹配度加成: ${entityBoostedCount} 篇文档获得额外分数`);
     }
   }
 

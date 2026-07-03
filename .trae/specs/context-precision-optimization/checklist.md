@@ -1,0 +1,9 @@
+- [x] Checkpoint 1: rerank 分数阈值已调整为 0.5
+- [x] Checkpoint 2: topK 已减少为 3
+- [x] Checkpoint 3: Wiki 概念词条权重策略已优化
+- [x] Checkpoint 4: 查询类型识别和动态 topK 已实现
+- [x] Checkpoint 5: 50 条样本评估 Context Precision ≥ 0.45 ✅ 0.4817
+- [x] Checkpoint 6: 50 条样本评估 Context Recall ≥ 0.53 ✅ 0.5450
+- [x] Checkpoint 7: 50 条样本评估 Answer Relevancy ≥ 0.85 ✅ 0.8608
+- [x] Checkpoint 8: 50 条样本评估表格截断率 ≤ 5% ✅ 3.17%
+- [x] Checkpoint 9: Spec 文档已更新记录最新优化结果

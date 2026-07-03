@@ -1,190 +1,508 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { WikiStats } from "@/lib/types";
+
+interface Message {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  context?: Array<{
+    docTitle: string;
+    metadata: Record<string, string>;
+    source: string;
+    score: number;
+    content?: string;
+    docPath?: string;
+  }>;
+  matchedKeywords?: string[];
+  structSummary?: string;
+}
+
+const QUICK_PROMPTS = [
+  "国家电网的ERP系统架构是怎样的？",
+  "物联网管理平台有哪些客户？",
+  "最近的项目验收情况如何？",
+  "微服务架构改造涉及哪些技术？",
+];
 
 export default function HomePage() {
-  const [stats, setStats] = useState<WikiStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch("/api/stats")
-      .then((res) => res.json())
-      .then((data) => {
-        setStats(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    inputRef.current?.focus();
   }, []);
 
+  const sendMessage = useCallback(
+    async (text?: string) => {
+      const queryText = text || input.trim();
+      if (!queryText || loading) return;
+
+      const userMsg: Message = {
+        id: Date.now().toString(),
+        role: "user",
+        content: queryText,
+      };
+
+      setMessages((prev) => [...prev, userMsg]);
+      setInput("");
+      setLoading(true);
+
+      const assistantId = (Date.now() + 1).toString();
+      const assistantMsg: Message = {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: queryText }),
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error("无法读取响应流");
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                setMessages((prev) =>
+                  prev.map((msg) => {
+                    if (msg.id !== assistantId) return msg;
+
+                    if (data.type === "method") {
+                      return {
+                        ...msg,
+                        matchedKeywords: data.matchedKeywords,
+                        structSummary: data.structSummary,
+                      };
+                    } else if (data.type === "context") {
+                      return { ...msg, context: data.results };
+                    } else if (data.type === "token") {
+                      return { ...msg, content: msg.content + (data.content || "") };
+                    } else if (data.type === "error") {
+                      return { ...msg, content: data.content || "发生错误" };
+                    }
+                    return msg;
+                  })
+                );
+              } catch {
+                // 忽略解析错误
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantId
+              ? { ...msg, content: `请求失败: ${err.message}` }
+              : msg
+          )
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [input, loading]
+  );
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Hero */}
-      <div className="text-center mb-12">
-        <h1 className="text-4xl font-bold text-slate-900 mb-3">
-          星辰Wiki
-        </h1>
-        <p className="text-lg text-slate-500 max-w-2xl mx-auto">
-          企业内部项目文档智能知识库 · 支持全文检索与 AI 智能问答
-        </p>
-        <div className="mt-6 flex items-center justify-center gap-3">
-          <Link
-            href="/search"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-sm"
-          >
-            <SearchIcon />
-            智能搜索
-          </Link>
-          <Link
-            href="/chat"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-slate-700 rounded-lg font-medium border border-slate-300 hover:bg-slate-50 transition-colors shadow-sm"
-          >
-            <ChatIcon />
-            AI 问答
-          </Link>
-          <Link
-            href="/docs"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-slate-700 rounded-lg font-medium border border-slate-300 hover:bg-slate-50 transition-colors shadow-sm"
-          >
-            <DocIcon />
-            文档浏览
-          </Link>
+    <div className="h-full flex flex-col mx-auto max-w-4xl relative">
+      {/* 顶部导航栏 */}
+      <header className="flex-shrink-0 flex items-center justify-between h-14 px-6 border-b border-slate-200/60 bg-white/70 backdrop-blur-xl sticky top-0 z-10">
+        <div className="flex items-center gap-3">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-sm">
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <h1 className="text-sm font-semibold text-slate-700 tracking-tight">星辰Wiki</h1>
         </div>
+        <nav className="flex items-center gap-1">
+          <NavLink href="/" active>问答</NavLink>
+          <NavLink href="/chat">AI对话</NavLink>
+          <NavLink href="/search">搜索</NavLink>
+          <NavLink href="/docs">文档</NavLink>
+        </nav>
+      </header>
+
+      {/* 消息列表 */}
+      <div className="flex-1 overflow-y-auto py-6 px-4 sm:px-6 space-y-5 gradient-bg">
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+            {/* 装饰图标 */}
+            <div className="relative mb-8">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-emerald-400 flex items-center justify-center border-2 border-white">
+                <div className="w-2 h-2 rounded-full bg-white" />
+              </div>
+            </div>
+
+            <h2 className="text-2xl font-bold text-slate-800 mb-2 tracking-tight">
+              今天有什么可以帮你的？
+            </h2>
+            <p className="text-sm text-slate-500 max-w-sm mb-8">
+              基于企业知识库文档，随时问我任何问题
+            </p>
+
+            {/* 推荐问题 */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-lg">
+              {QUICK_PROMPTS.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => {
+                    setInput(q);
+                    inputRef.current?.focus();
+                  }}
+                  className="text-left px-4 py-3 rounded-xl border border-slate-200/80 bg-white/60 backdrop-blur-sm text-sm text-slate-600 hover:border-indigo-300 hover:text-indigo-700 hover:bg-white/90 transition-all duration-200 hover:shadow-sm"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {messages.map((msg, idx) => (
+          <div
+            key={msg.id}
+            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} message-enter`}
+            style={{ animationDelay: `${Math.min(idx * 50, 300)}ms` }}
+          >
+            <div className="flex items-start gap-2.5 max-w-[80%]">
+              {/* 头像 */}
+              {msg.role === "assistant" && (
+                <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-sm mt-0.5">
+                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+              )}
+              {msg.role === "system" && (
+                <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center mt-0.5">
+                  <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              )}
+
+              <div
+                className={`rounded-2xl px-4 py-3 ${
+                  msg.role === "user"
+                    ? "bg-gradient-to-br from-indigo-600 to-indigo-500 text-white shadow-md shadow-indigo-500/20"
+                    : msg.role === "system"
+                    ? "bg-amber-50/80 border border-amber-200 text-amber-800 backdrop-blur-sm"
+                    : "glass-card shadow-sm"
+                }`}
+              >
+                {msg.matchedKeywords && msg.matchedKeywords.length > 0 && (
+                  <EntityTags keywords={msg.matchedKeywords} />
+                )}
+
+                {msg.structSummary && (
+                  <StructResultCard
+                    structSummary={msg.structSummary}
+                    matchedKeywords={msg.matchedKeywords}
+                  />
+                )}
+
+                {msg.context && msg.context.length > 0 && (
+                  <ReferenceCards contexts={msg.context} />
+                )}
+
+                <div className={`text-sm leading-relaxed whitespace-pre-wrap markdown-body ${msg.role === "user" ? "text-white" : ""}`}>
+                  {msg.content || (
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block w-2 h-2 rounded-full bg-slate-300" style={{ animation: "bounce-dot 1.4s ease-in-out infinite" }} />
+                      <span className="inline-block w-2 h-2 rounded-full bg-slate-300" style={{ animation: "bounce-dot 1.4s ease-in-out 0.2s infinite" }} />
+                      <span className="inline-block w-2 h-2 rounded-full bg-slate-300" style={{ animation: "bounce-dot 1.4s ease-in-out 0.4s infinite" }} />
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {msg.role === "user" && (
+                <div className="flex-shrink-0 w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center mt-0.5">
+                  <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* 统计卡片 */}
-      {loading ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="bg-white rounded-xl border border-slate-200 p-5 animate-pulse">
-              <div className="h-4 bg-slate-200 rounded w-16 mb-3" />
-              <div className="h-8 bg-slate-200 rounded w-12" />
-            </div>
-          ))}
+      {/* 输入框区域 */}
+      <div className="flex-shrink-0 px-4 sm:px-6 pb-5 pt-2 bg-gradient-to-t from-white via-white/90 to-transparent">
+        <div className="flex items-end gap-2.5 glass-card rounded-2xl p-2 shadow-sm border-slate-200/60">
+          <input
+            ref={inputRef}
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+            placeholder="输入问题，基于知识库文档回答..."
+            disabled={loading}
+            className="flex-1 px-3 py-2.5 bg-transparent text-sm text-slate-700 placeholder-slate-400 focus:outline-none disabled:opacity-50"
+          />
+          <button
+            onClick={() => sendMessage()}
+            disabled={loading || !input.trim()}
+            className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-500 text-white flex items-center justify-center hover:from-indigo-700 hover:to-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow-md active:scale-95"
+          >
+            {loading ? (
+              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            )}
+          </button>
         </div>
-      ) : stats ? (
-        <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <StatCard label="原始文档" value={stats.totalDocs} color="indigo" />
-            <StatCard label="概念词条" value={stats.totalConcepts} color="emerald" />
-            <StatCard label="实体词条" value={stats.totalEntities} color="amber" />
-            <StatCard label="客户企业" value={stats.totalClients} color="rose" />
+        <p className="text-[11px] text-slate-400 text-center mt-3">
+          回答基于知识库文档内容生成，请以实际文档为准
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ========== 导航链接 ========== */
+function NavLink({ href, active, children }: { href: string; active?: boolean; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+        active
+          ? "bg-indigo-50 text-indigo-600"
+          : "text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+      }`}
+    >
+      {children}
+    </Link>
+  );
+}
+
+/* ========== 子组件 ========== */
+
+function EntityTags({ keywords }: { keywords: string[] }) {
+  return (
+    <div className="mb-2.5 flex items-center gap-1.5 flex-wrap">
+      <span className="text-[10px] text-slate-400 flex-shrink-0">🔍 识别:</span>
+      {keywords.map((kw, i) => (
+        <span
+          key={i}
+          className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-50 text-indigo-600 border border-indigo-100"
+        >
+          {kw}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function StructResultCard({
+  structSummary,
+  matchedKeywords,
+}: {
+  structSummary: string;
+  matchedKeywords?: string[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const lines = structSummary.split("\n").filter((l) => l.trim());
+  const sections: { keyword: string; freq: number; docs: string[] }[] = [];
+
+  let currentSection: { keyword: string; freq: number; docs: string[] } | null = null;
+  for (const line of lines) {
+    const headingMatch = line.match(/^### (.+?)\(频次:\s*(\d+)\)/);
+    if (headingMatch) {
+      if (currentSection) sections.push(currentSection);
+      currentSection = { keyword: headingMatch[1].trim(), freq: parseInt(headingMatch[2]), docs: [] };
+    } else if (line.startsWith("  - ") && currentSection) {
+      currentSection.docs.push(line.replace(/^\s*-\s*/, "").trim());
+    }
+  }
+  if (currentSection) sections.push(currentSection);
+
+  const totalDocs = sections.reduce((sum, s) => sum + s.docs.length, 0);
+
+  return (
+    <div className="mb-3 pb-3 border-b border-slate-200/50">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full text-left text-xs text-slate-500 flex items-center gap-1.5 hover:bg-white/60 rounded-lg px-2 py-1.5 transition-all duration-200"
+      >
+        <span className={`flex-shrink-0 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}>
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </span>
+        <span className="font-medium text-slate-600">关联查询</span>
+        {matchedKeywords && matchedKeywords.length > 0 && (
+          <span className="text-[10px] opacity-60">({matchedKeywords.join("、")})</span>
+        )}
+        <span className="text-[10px] opacity-50 font-mono ml-auto">
+          {sections.length}实体 · {totalDocs}文档
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="mt-1 mx-6 mb-1 animate-fade-in-up">
+          <div className="text-[11px] leading-relaxed text-slate-600 bg-indigo-50/50 border border-indigo-100 rounded-xl px-3 py-2 max-h-64 overflow-y-auto">
+            {sections.map((section, si) => (
+              <div key={si} className={si > 0 ? "mt-2 pt-2 border-t border-indigo-100/50" : ""}>
+                <div className="font-semibold text-indigo-700 mb-0.5">
+                  {section.keyword}
+                  <span className="font-normal text-slate-400 ml-1">({section.freq})</span>
+                </div>
+                <ul className="space-y-0.5">
+                  {section.docs.map((doc, di) => (
+                    <li key={di} className="text-slate-500 pl-3">· {doc}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-            <StatCard label="项目系统" value={stats.totalProjects} color="cyan" />
-            <StatCard label="文档类型" value={stats.totalDocTypes} color="violet" />
-            <StatCard label="文档块" value={stats.totalChunks} color="slate" />
-            <StatCard label="索引状态" value={stats.indexReady ? "就绪" : "构建中"} color={stats.indexReady ? "emerald" : "orange"} isString />
-          </div>
-
-          {/* 热门概念 */}
-          <section className="mb-10">
-            <h2 className="text-xl font-semibold text-slate-900 mb-4">🔥 热门概念词条</h2>
-            <div className="flex flex-wrap gap-2">
-              {stats.topConcepts.map((c) => (
-                <span
-                  key={c.name}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 rounded-full text-sm text-slate-700 hover:border-indigo-300 hover:text-indigo-700 transition-colors cursor-default"
-                  title={`出现频次: ${c.frequency}`}
-                >
-                  {c.name}
-                  <span className="text-xs text-slate-400">{c.frequency}</span>
-                </span>
-              ))}
-            </div>
-          </section>
-
-          {/* 客户企业 */}
-          <section className="mb-10">
-            <h2 className="text-xl font-semibold text-slate-900 mb-4">🏢 客户企业</h2>
-            <div className="flex flex-wrap gap-2">
-              {stats.clients.map((c) => (
-                <span
-                  key={c}
-                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-full text-sm text-slate-600 hover:border-indigo-300 hover:text-indigo-700 transition-colors cursor-default"
-                >
-                  {c}
-                </span>
-              ))}
-            </div>
-          </section>
-
-          {/* 项目系统 */}
-          <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-4">📋 项目系统类型</h2>
-            <div className="flex flex-wrap gap-2">
-              {stats.projects.map((p) => (
-                <span
-                  key={p}
-                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-full text-sm text-slate-600 hover:border-indigo-300 hover:text-indigo-700 transition-colors cursor-default"
-                >
-                  {p}
-                </span>
-              ))}
-            </div>
-          </section>
-        </>
-      ) : (
-        <div className="text-center py-12 text-slate-500">加载统计数据失败</div>
+        </div>
       )}
     </div>
   );
 }
 
-function StatCard({
-  label,
-  value,
-  color,
-  isString = false,
+function ReferenceCards({
+  contexts,
 }: {
-  label: string;
-  value: string | number;
-  color: string;
-  isString?: boolean;
+  contexts: Array<{
+    docTitle: string;
+    metadata: Record<string, string>;
+    source: string;
+    score: number;
+    content?: string;
+    docPath?: string;
+  }>;
 }) {
-  const colorMap: Record<string, string> = {
-    indigo: "bg-indigo-50 text-indigo-700 border-indigo-200",
-    emerald: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    amber: "bg-amber-50 text-amber-700 border-amber-200",
-    rose: "bg-rose-50 text-rose-700 border-rose-200",
-    cyan: "bg-cyan-50 text-cyan-700 border-cyan-200",
-    violet: "bg-violet-50 text-violet-700 border-violet-200",
-    slate: "bg-slate-100 text-slate-700 border-slate-200",
-    orange: "bg-orange-50 text-orange-700 border-orange-200",
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const toggle = (index: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
   };
 
   return (
-    <div className={`rounded-xl border p-5 ${colorMap[color] || colorMap.indigo}`}>
-      <div className="text-sm opacity-70 mb-1">{label}</div>
-      <div className={`text-2xl font-bold ${isString && value === "就绪" ? "text-emerald-600" : ""}`}>
-        {value}
+    <div className="mb-3 pb-3 border-b border-slate-200/50">
+      <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        参考文档 ({contexts.length})
+      </div>
+      <div className="space-y-1">
+        {contexts.map((ctx, i) => (
+          <div key={i}>
+            <button
+              onClick={() => toggle(i)}
+              className="w-full text-left text-xs flex items-center gap-2 hover:bg-white/60 rounded-lg px-2 py-1.5 transition-all duration-200 group"
+            >
+              <span className={`flex-shrink-0 transition-transform duration-200 ${expanded.has(i) ? "rotate-90" : ""}`}>
+                <svg className="w-3 h-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </span>
+              <span className="truncate flex-1 font-medium text-slate-600 group-hover:text-slate-900">
+                {ctx.docTitle}
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono flex-shrink-0">
+                {ctx.score.toFixed(2)}
+              </span>
+              <SourceBadge source={ctx.source} />
+            </button>
+
+            {expanded.has(i) && ctx.content && (
+              <div className="mt-1 mx-6 mb-1 animate-fade-in-up">
+                <div className="text-[11px] leading-relaxed text-slate-600 bg-white/80 border border-slate-100 rounded-xl px-3 py-2 max-h-48 overflow-y-auto whitespace-pre-wrap">
+                  {ctx.content.replace(/\[\[([^\]]+)\]\]/g, "$1").slice(0, 1500)}
+                  {ctx.content.length > 1500 && (
+                    <span className="text-slate-300 ml-1">...（已截断）</span>
+                  )}
+                </div>
+                {ctx.docPath && (
+                  <div className="text-[10px] text-slate-300 mt-0.5 ml-0.5 truncate">
+                    {ctx.docPath}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function SearchIcon() {
-  return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-    </svg>
-  );
-}
+function SourceBadge({ source }: { source: string }) {
+  const styles: Record<string, string> = {
+    vector: "bg-purple-50 text-purple-600 border-purple-100",
+    bm25: "bg-amber-50 text-amber-600 border-amber-100",
+    hybrid: "bg-emerald-50 text-emerald-600 border-emerald-100",
+    entity: "bg-rose-50 text-rose-600 border-rose-100",
+    structured: "bg-blue-50 text-blue-600 border-blue-100",
+  };
 
-function ChatIcon() {
-  return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-    </svg>
-  );
-}
+  const labels: Record<string, string> = {
+    vector: "向量",
+    bm25: "BM25",
+    hybrid: "混合",
+    entity: "实体",
+    structured: "数据库",
+  };
 
-function DocIcon() {
   return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-    </svg>
+    <span
+      className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 border ${styles[source] || "bg-slate-50 text-slate-500 border-slate-100"}`}
+    >
+      {labels[source] || source}
+    </span>
   );
 }

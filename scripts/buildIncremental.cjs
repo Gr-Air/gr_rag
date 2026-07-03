@@ -23,7 +23,7 @@ const { loadEnv } = require('./lib/envLoader.cjs');
 loadEnv();
 
 // 公共模块
-const { tokenize } = require('./lib/tokenizer.cjs');
+const { tokenizeAll } = require('./lib/tokenizer.cjs');
 const { getEmbeddingsBatch } = require('./lib/embedder.cjs');
 const { chunkDocument, buildWikiChunk, extractTitle, parseFilename } = require('./lib/chunker.cjs');
 const { scanAll } = require('./lib/scanner.cjs');
@@ -289,7 +289,7 @@ function updateBM25AndMeta(changes, newLanceChunks) {
 
   // 追加新 chunk 的 BM25 数据
   for (const chunk of newLanceChunks) {
-    const tokens = tokenize(chunk.content);
+    const tokens = tokenizeAll(chunk.content);
     allDocLengths[chunk.id] = tokens.length;
     const tfMap = new Map();
     for (const t of tokens) tfMap.set(t, (tfMap.get(t) || 0) + 1);

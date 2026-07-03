@@ -1,5 +1,5 @@
 // ============================================================
-// 索引构建脚本（使用 jieba 分词 + 阿里 DashScope Embedding）
+// 索引构建脚本（分批流式处理）
 // 用法: npx tsx scripts/buildIndex.ts
 // ============================================================
 
@@ -8,7 +8,6 @@ import * as path from 'path';
 import { DocChunk } from '../src/lib/types';
 import { tokenize } from '../src/lib/tokenizer';
 
-// 加载 .env 环境变量
 const envPath = path.join(__dirname, '..', '.env');
 if (fs.existsSync(envPath)) {
   const envContent = fs.readFileSync(envPath, 'utf-8');
@@ -27,20 +26,16 @@ const RAW_DIR = path.join(process.cwd(), '..', 'Raw');
 const WIKI_DIR = path.join(process.cwd(), '..', 'Wiki');
 const DATA_DIR = path.join(process.cwd(), 'src', 'data');
 
-// 阿里 DashScope Embedding 配置
 const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY || '';
 const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'text-embedding-v4';
 const EMBEDDING_DIM = parseInt(process.env.EMBEDDING_DIM || '1024', 10);
 const DASHSCOPE_URL = 'https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding';
 
 const DIM = EMBEDDING_DIM;
-
-// ============================================================
-// 阿里 DashScope Embedding 批量调用
-// ============================================================
+const PROCESS_BATCH = 500;
 
 async function getEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-  const BATCH_SIZE = 10; // DashScope text-embedding-v4 限制单次最多 10 条
+  const BATCH_SIZE = 10;
   const results: number[][] = [];
 
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
@@ -73,10 +68,6 @@ async function getEmbeddingsBatch(texts: string[]): Promise<number[][]> {
 
   return results;
 }
-
-// ============================================================
-// 解析工具
-// ============================================================
 
 function parseRawFilename(filename: string) {
   const name = filename.replace(/\.md$/, '');
@@ -134,23 +125,8 @@ function chunkDocument(
   return chunks;
 }
 
-// ============================================================
-// 主构建流程
-// ============================================================
-
-async function main() {
-  console.log('========================================');
-  console.log('  星辰Wiki 知识库索引构建（纯 JS）');
-  console.log('========================================\n');
-
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-
-  // --- 阶段1：解析所有文档并生成 chunks ---
-  console.log('[阶段 1] 解析文档并分块...');
-
-  const allChunks: DocChunk[] = [];
+function* generateAllChunks(): Generator<DocChunk> {
   const rawFiles = fs.readdirSync(RAW_DIR).filter(f => f.endsWith('.md'));
-
   for (let fi = 0; fi < rawFiles.length; fi++) {
     const file = rawFiles[fi];
     const content = fs.readFileSync(path.join(RAW_DIR, file), 'utf-8');
@@ -170,111 +146,138 @@ async function main() {
     const chunks = chunkDocument(content, docId, title, `Raw/${file}`, {
       client: meta.client, project: meta.project, docType: meta.docType, date: meta.date,
     });
-    allChunks.push(...chunks);
+    for (const chunk of chunks) yield chunk;
 
     if ((fi + 1) % 20 === 0) {
-      console.log(`  已解析 ${fi + 1}/${rawFiles.length} 个文档, ${allChunks.length} 个块`);
+      console.log(`  已解析 ${fi + 1}/${rawFiles.length} 个 Raw 文档`);
     }
   }
+}
 
-  // 添加 Wiki 词条
-  console.log('  添加 Wiki 词条...');
-  for (const sub of ['concept', 'entity']) {
-    const dir = path.join(WIKI_DIR, sub);
-    if (!fs.existsSync(dir)) continue;
-    for (const wf of fs.readdirSync(dir).filter(f => f.endsWith('.md'))) {
-      const wContent = fs.readFileSync(path.join(dir, wf), 'utf-8');
-      const name = wf.replace(/\.md$/, '');
-      const freqMatch = wContent.match(/出现频次:\s*(\d+)/);
-      const freq = freqMatch ? parseInt(freqMatch[1]) : 0;
-      const text = `# ${name}\n${sub === 'concept' ? '概念' : '实体'} | 出现频次: ${freq}`;
-      allChunks.push({
-        id: `wiki_${name}`, docId: `wiki_${name}`, docTitle: name,
-        docPath: `Wiki/${sub}/${wf}`, chunkIndex: 0, content: text,
-        metadata: { client: '', project: '', docType: sub === 'concept' ? '概念' : '实体', date: '' },
-        wikiLinks: [name],
-      });
-    }
-  }
+async function main() {
+  console.log('========================================');
+  console.log('  星辰Wiki 知识库索引构建（流式分批）');
+  console.log('========================================\n');
 
-  console.log(`  ✅ 共 ${allChunks.length} 个文档块\n`);
-
-  // --- 阶段2：构建向量索引（使用阿里 DashScope Embedding）---
-  console.log('[阶段 2] 构建向量索引（阿里 DashScope Embedding）...');
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
   if (!DASHSCOPE_API_KEY || DASHSCOPE_API_KEY.startsWith('sk-你的')) {
-    console.error('  ❌ DASHSCOPE_API_KEY 未配置，请在 .env 中设置有效的 API Key');
+    console.error('  ❌ DASHSCOPE_API_KEY 未配置');
     process.exit(1);
   }
 
-  // 准备所有文本（取前 2000 字符）
-  const vecTexts = allChunks.map(c => c.content.slice(0, 2000));
-  console.log(`  共 ${vecTexts.length} 条文本待向量化，维度: ${DIM}`);
-
-  // 批量调用阿里 embedding API
-  const allVectors = await getEmbeddingsBatch(vecTexts);
-  console.log(`  ✅ Embedding 完成: ${allVectors.length} 个向量`);
-
-  const vecMetadata = allChunks.map(c => ({
-    id: c.id, docId: c.docId, docTitle: c.docTitle, docPath: c.docPath,
-    metadata: c.metadata, content: c.content.slice(0, 3000), wikiLinks: c.wikiLinks,
-  }));
-
-  // 保存向量到 JSON（分片）
   const vecDir = path.join(DATA_DIR, 'vectors');
-  if (!fs.existsSync(vecDir)) fs.mkdirSync(vecDir, { recursive: true });
+  const bm25Dir = path.join(DATA_DIR, 'bm25');
+  const chunksMetaDir = path.join(DATA_DIR, 'chunks_meta');
 
-  const vecShardSize = 1000;
-  for (let i = 0; i < allVectors.length; i += vecShardSize) {
-    const shardVectors = allVectors.slice(i, i + vecShardSize);
-    const shardMeta = vecMetadata.slice(i, i + vecShardSize);
-    fs.writeFileSync(
-      path.join(vecDir, `shard_${Math.floor(i / vecShardSize)}.json`),
-      JSON.stringify({ vectors: shardVectors, meta: shardMeta })
-    );
-  }
+  if (fs.existsSync(vecDir)) fs.rmSync(vecDir, { recursive: true });
+  if (fs.existsSync(bm25Dir)) fs.rmSync(bm25Dir, { recursive: true });
+  if (fs.existsSync(chunksMetaDir)) fs.rmSync(chunksMetaDir, { recursive: true });
 
-  fs.writeFileSync(path.join(vecDir, 'config.json'), JSON.stringify({
-    totalChunks: allVectors.length,
-    dim: DIM,
-    shardSize: vecShardSize,
-    totalShards: Math.ceil(allVectors.length / vecShardSize),
-  }));
-
-  console.log(`  ✅ 向量索引完成: ${allVectors.length} 个向量, ${Math.ceil(allVectors.length / vecShardSize)} 个分片\n`);
-
-  // --- 阶段3：构建 BM25 倒排索引 ---
-  console.log('[阶段 3] 构建 BM25 倒排索引...');
+  fs.mkdirSync(vecDir, { recursive: true });
+  fs.mkdirSync(bm25Dir, { recursive: true });
+  fs.mkdirSync(chunksMetaDir, { recursive: true });
 
   const invIndex = new Map<string, Array<{ chunkId: string; tf: number }>>();
   const docLengths: Record<string, number> = {};
+  const vecShardSize = 1000;
+  const metaShardSize = 2000;
 
-  for (let i = 0; i < allChunks.length; i++) {
-    const c = allChunks[i];
-    const tokens = tokenize(c.content);
-    docLengths[c.id] = tokens.length;
+  let totalChunks = 0;
+  let vecShardIndex = 0;
+  let metaShardIndex = 0;
+  let currentVecs: number[][] = [];
+  let currentMeta: Array<{ id: string; docId: string; docTitle: string; docPath: string; metadata: any; content: string; wikiLinks: string[] }> = [];
 
-    const tfMap = new Map<string, number>();
-    for (const t of tokens) tfMap.set(t, (tfMap.get(t) || 0) + 1);
-    for (const [term, tf] of tfMap) {
-      if (!invIndex.has(term)) invIndex.set(term, []);
-      invIndex.get(term)!.push({ chunkId: c.id, tf });
+  const chunkGenerator = generateAllChunks();
+
+  console.log('[阶段 1] 解析文档并构建索引...');
+  console.log('  这将分批处理，请耐心等待...\n');
+
+  while (true) {
+    const batch: DocChunk[] = [];
+    for (let i = 0; i < PROCESS_BATCH; i++) {
+      const result = chunkGenerator.next();
+      if (result.done) break;
+      batch.push(result.value);
     }
 
-    if ((i + 1) % 500 === 0) {
-      console.log(`  已索引 ${i + 1}/${allChunks.length}, ${invIndex.size} 个词项`);
+    if (batch.length === 0) break;
+
+    console.log(`  处理批次 ${totalChunks + 1}-${totalChunks + batch.length}...`);
+
+    const texts = batch.map(c => c.content.slice(0, 2000));
+    const vectors = await getEmbeddingsBatch(texts);
+
+    for (let i = 0; i < batch.length; i++) {
+      const c = batch[i];
+      const vec = vectors[i];
+
+      currentVecs.push(vec);
+      currentMeta.push({
+        id: c.id, docId: c.docId, docTitle: c.docTitle, docPath: c.docPath,
+        metadata: c.metadata, content: c.content.slice(0, 3000), wikiLinks: c.wikiLinks,
+      });
+
+      if (currentVecs.length >= vecShardSize) {
+        fs.writeFileSync(
+          path.join(vecDir, `shard_${vecShardIndex}.json`),
+          JSON.stringify({ vectors: currentVecs, meta: currentMeta })
+        );
+        vecShardIndex++;
+        currentVecs = [];
+        currentMeta = [];
+        console.log(`    已写入向量分片 ${vecShardIndex}`);
+      }
+
+      const tokens = tokenize(c.content);
+      docLengths[c.id] = tokens.length;
+
+      const tfMap = new Map<string, number>();
+      for (const t of tokens) tfMap.set(t, (tfMap.get(t) || 0) + 1);
+      for (const [term, tf] of tfMap) {
+        if (!invIndex.has(term)) invIndex.set(term, []);
+        invIndex.get(term)!.push({ chunkId: c.id, tf });
+      }
+
+      if (Object.keys(docLengths).length % metaShardSize === 0 && Object.keys(docLengths).length > 0) {
+        const shard: Record<string, any> = {};
+        const startIdx = Object.keys(docLengths).length - metaShardSize;
+        for (let j = startIdx; j < Object.keys(docLengths).length; j++) {
+          const idx = Object.keys(docLengths)[j];
+          const cm = currentMeta.find(m => m.id === idx);
+          if (cm) shard[idx] = cm;
+        }
+        fs.writeFileSync(path.join(chunksMetaDir, `shard_${metaShardIndex}.json`), JSON.stringify(shard));
+        metaShardIndex++;
+        console.log(`    已写入元数据分片 ${metaShardIndex}`);
+      }
     }
+
+    totalChunks += batch.length;
+    console.log(`    累计: ${totalChunks} 个文档块\n`);
   }
 
-  // 保存 BM25 索引
-  const bm25Dir = path.join(DATA_DIR, 'bm25');
-  if (!fs.existsSync(bm25Dir)) fs.mkdirSync(bm25Dir, { recursive: true });
+  if (currentVecs.length > 0) {
+    fs.writeFileSync(
+      path.join(vecDir, `shard_${vecShardIndex}.json`),
+      JSON.stringify({ vectors: currentVecs, meta: currentMeta })
+    );
+    vecShardIndex++;
+  }
+
+  fs.writeFileSync(path.join(vecDir, 'config.json'), JSON.stringify({
+    totalChunks, dim: DIM, shardSize: vecShardSize, totalShards: vecShardIndex,
+  }));
+
+  console.log(`  ✅ 向量索引完成: ${totalChunks} 个向量, ${vecShardIndex} 个分片\n`);
+
+  console.log('[阶段 2] 构建 BM25 倒排索引...');
 
   let totalLen = 0;
   for (const len of Object.values(docLengths)) totalLen += len;
-  const avgDocLen = allChunks.length > 0 ? totalLen / allChunks.length : 0;
+  const avgDocLen = totalChunks > 0 ? totalLen / totalChunks : 0;
 
-  // 倒排索引分片保存
   const entries = Array.from(invIndex.entries());
   const bm25ShardSize = 5000;
   for (let i = 0; i < entries.length; i += bm25ShardSize) {
@@ -286,42 +289,21 @@ async function main() {
   }
 
   fs.writeFileSync(path.join(bm25Dir, 'meta.json'), JSON.stringify({
-    docCount: allChunks.length,
-    avgDocLen,
-    totalTerms: invIndex.size,
+    docCount: totalChunks, avgDocLen, totalTerms: invIndex.size,
     totalShards: Math.ceil(entries.length / bm25ShardSize),
   }));
   fs.writeFileSync(path.join(bm25Dir, 'doc_lengths.json'), JSON.stringify(docLengths));
 
-  // 保存 chunks 元数据（供检索时查询内容）
-  const chunksMetaDir = path.join(DATA_DIR, 'chunks_meta');
-  if (!fs.existsSync(chunksMetaDir)) fs.mkdirSync(chunksMetaDir, { recursive: true });
-
-  const metaShardSize = 2000;
-  for (let i = 0; i < allChunks.length; i += metaShardSize) {
-    const shard: Record<string, any> = {};
-    for (let j = i; j < Math.min(i + metaShardSize, allChunks.length); j++) {
-      const c = allChunks[j];
-      shard[c.id] = {
-        docId: c.docId, docTitle: c.docTitle, docPath: c.docPath,
-        metadata: c.metadata, content: c.content.slice(0, 3000), wikiLinks: c.wikiLinks,
-      };
-    }
-    fs.writeFileSync(path.join(chunksMetaDir, `shard_${Math.floor(i / metaShardSize)}.json`), JSON.stringify(shard));
-  }
-
   fs.writeFileSync(path.join(chunksMetaDir, 'config.json'), JSON.stringify({
-    totalChunks: allChunks.length,
-    shardSize: metaShardSize,
-    totalShards: Math.ceil(allChunks.length / metaShardSize),
+    totalChunks, shardSize: metaShardSize, totalShards: metaShardIndex,
   }));
 
-  console.log(`  ✅ BM25 索引完成: ${allChunks.length} 文档, ${invIndex.size} 词项, 平均长度 ${avgDocLen.toFixed(1)}\n`);
+  console.log(`  ✅ BM25 索引完成: ${totalChunks} 文档, ${invIndex.size} 词项, 平均长度 ${avgDocLen.toFixed(1)}\n`);
 
   console.log('========================================');
   console.log('  ✅ 全部索引构建完成!');
   console.log('========================================');
-  console.log(`  总文档块: ${allChunks.length}`);
+  console.log(`  总文档块: ${totalChunks}`);
   console.log(`  向量维度: ${DIM}`);
   console.log(`  BM25 词项: ${invIndex.size}`);
   console.log(`  数据目录: ${DATA_DIR}`);
