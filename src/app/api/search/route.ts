@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { hybridSearch } from '@/lib/hybridSearch';
 import { isIndexReady } from '@/lib/indexManager';
-import { extractEntityKeywords } from '@/lib/entityRouter';
+import { extractEntityKeywords, routedSearch } from '@/lib/entityRouter';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const query = searchParams.get('q');
   const topK = parseInt(searchParams.get('topK') || '10');
-  const searchMethod = searchParams.get('method') as 'rrf' | 'entity' | 'structured' | 'hybrid' | undefined;
+  const searchMethod = searchParams.get('method') as 'rrf' | 'entity' | undefined;
 
   if (!query || query.trim().length === 0) {
     return NextResponse.json({ error: '请提供搜索关键词' }, { status: 400 });
@@ -22,15 +22,15 @@ export async function GET(req: NextRequest) {
 
   try {
     const trimmedQuery = query.trim();
-    const matched = extractEntityKeywords(trimmedQuery);
-    const results = await hybridSearch(trimmedQuery, topK, 20, 20, {
-      matchedKeywords: matched.length > 0 ? matched : undefined,
-    });
+    const routedResult = await routedSearch(trimmedQuery, topK, { forceMethod: searchMethod });
+    const { results, method, matchedKeywords, structSummary } = routedResult;
 
     return NextResponse.json({
       query,
-      matchedKeywords: matched.length > 0 ? matched : undefined,
+      matchedKeywords,
+      method,
       total: results.length,
+      structSummary,
       results: results.map(r => ({
         id: r.chunk.id,
         docId: r.chunk.docId,

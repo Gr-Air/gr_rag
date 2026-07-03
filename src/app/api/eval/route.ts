@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     let results: SearchResult[] = [];
     let structSummary: string | undefined;
     let entityDocsContent: string | undefined;
-    let searchMethod: 'rrf' | 'entity' | 'structured' | 'hybrid' = 'rrf';
+    let searchMethod: 'rrf' | 'entity' = 'rrf';
 
     // 实体关联文档加载（完整策略：短文档全文，长文档片段提取）
     // 只有匹配到"客户企业"或"项目系统"才走结构化检索
@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
       if (entityResult) {
         structSummary = entityResult.structSummary;
         entityDocsContent = entityResult.docsContent;
-        searchMethod = 'structured';
+        searchMethod = 'entity';
       }
     }
 

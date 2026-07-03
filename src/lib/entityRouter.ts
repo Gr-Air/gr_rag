@@ -1,9 +1,9 @@
 // ============================================================
 // 实体路由检索引擎
 // 策略：
-//   1. 从 Wiki 目录加载所有实体/概念词条名作为关键字
+//   1. 从 SQLite 加载所有实体词条名作为关键字
 //   2. 用户提问时，用字典最大匹配法检测是否包含实体关键字
-//   3. 有匹配 → 实体精确召回（匹配 wikiLinks 中引用该实体的所有 chunk）
+//   3. 有匹配 → 结构化查询，返回包含实体的上下文片段（±200 token）
 //   4. 无匹配 → 走向量+BM25 RRF 融合检索
 // ============================================================
 
@@ -26,9 +26,10 @@ export function loadEntityKeywords(): string[] {
   try {
     const { getKnownEntityNames, isStructDbReady } = require('./structSearchEngine');
     if (isStructDbReady()) {
-      const entities = getKnownEntityNames() as { name: string }[];
-      // 按长度降序排列，确保最长匹配优先（贪心匹配需要）
-      const keywords = entities.map((e: { name: string }) => e.name).sort((a: string, b: string) => b.length - a.length);
+      const entities = getKnownEntityNames() as { name: string; type: string }[];
+      // 只加载实体类型，排除概念
+      const filteredEntities = entities.filter((e) => e.type === 'entity');
+      const keywords = filteredEntities.map((e) => e.name).sort((a: string, b: string) => b.length - a.length);
       entityKeywords = keywords;
       keywordSet = new Set(keywords);
       console.log(`[EntityRouter] 从 SQLite 加载 ${keywords.length} 个实体关键字`);
@@ -148,6 +149,156 @@ export function buildEntityInvertedIndex(): Map<string, string[]> {
   entityToChunks = index;
   console.log(`[EntityRouter] 倒排索引构建完成: ${index.size} 个实体, ${allChunks ? Object.keys(allChunks).length : 0} 个文档块`);
   return entityToChunks;
+}
+
+/**
+ * 从文档内容中提取包含实体的上下文片段
+ * 每个实体匹配点提取 ±200 token 的上下文，最多 3 个片段，重叠区间合并
+ */
+function extractEntityContext(
+  content: string,
+  entities: string[],
+  contextSize: number = 200
+): string {
+  const segments: { start: number; end: number }[] = [];
+
+  for (const entity of entities) {
+    const regex = new RegExp(entity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    let match;
+    let count = 0;
+
+    while ((match = regex.exec(content)) !== null && count < 3) {
+      const start = Math.max(0, match.index - contextSize);
+      const end = Math.min(content.length, match.index + match[0].length + contextSize);
+      segments.push({ start, end });
+      count++;
+    }
+  }
+
+  if (segments.length === 0) {
+    return content.slice(0, contextSize * 2);
+  }
+
+  segments.sort((a, b) => a.start - b.start);
+
+  const merged: { start: number; end: number }[] = [segments[0]];
+  for (let i = 1; i < segments.length; i++) {
+    const last = merged[merged.length - 1];
+    if (segments[i].start <= last.end) {
+      last.end = Math.max(last.end, segments[i].end);
+    } else {
+      merged.push(segments[i]);
+    }
+  }
+
+  return merged.map(s => content.slice(s.start, s.end)).join('\n');
+}
+
+/**
+ * 实体检索：从结构化查询结果中提取包含实体的上下文片段
+ * 返回包含实体的文档上下文（±200 token）
+ */
+async function entityRecallWithContext(
+  matchedKeywords: string[],
+  structResults: import('./structSearchEngine').StructSearchResult[],
+  topK: number
+): Promise<SearchResult[]> {
+  const allChunksData = loadAllChunks();
+  const wikiDir = path.join(process.cwd(), 'Wiki');
+
+  const results: SearchResult[] = [];
+  const seenChunkIds = new Set<string>();
+  const seenEntryNames = new Set<string>();
+
+  for (const sr of structResults) {
+    if (seenEntryNames.has(sr.entry.name)) continue;
+    seenEntryNames.add(sr.entry.name);
+
+    if (sr.entry.type === 'concept' && sr.entry.path) {
+      const wikiFilePath = path.join(wikiDir, sr.entry.path);
+      if (fs.existsSync(wikiFilePath)) {
+        const wikiContent = fs.readFileSync(wikiFilePath, 'utf-8');
+        const context = extractEntityContext(wikiContent, matchedKeywords);
+
+        const chunk: DocChunk = {
+          id: `wiki_${sr.entry.name}`,
+          docId: `wiki_${sr.entry.name}`,
+          docTitle: sr.entry.name,
+          docPath: sr.entry.path,
+          chunkIndex: 0,
+          content: context,
+          metadata: {
+            docType: 'wiki',
+          },
+          wikiLinks: [],
+        };
+
+        let highlight = context.slice(0, 500);
+        for (const kw of matchedKeywords) {
+          try {
+            highlight = highlight.replace(
+              new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+              `**${kw}**`
+            );
+          } catch { /* ignore regex errors */ }
+        }
+
+        results.push({
+          chunk,
+          score: (sr.entry.frequency + 100) / 500,
+          source: 'entity',
+          highlight,
+        });
+
+        if (results.length >= topK) break;
+        continue;
+      }
+    }
+
+    for (const structChunk of sr.chunks) {
+      const chunkId = structChunk.chunk_id;
+      if (seenChunkIds.has(chunkId)) continue;
+      seenChunkIds.add(chunkId);
+
+      const chunkData = allChunksData[chunkId];
+      if (!chunkData) continue;
+
+      const context = extractEntityContext(chunkData.content, matchedKeywords);
+
+      const chunk: DocChunk = {
+        id: chunkId,
+        docId: chunkData.docId,
+        docTitle: chunkData.docTitle,
+        docPath: chunkData.docPath,
+        chunkIndex: 0,
+        content: context,
+        metadata: chunkData.metadata,
+        wikiLinks: chunkData.wikiLinks || [],
+      };
+
+      let highlight = context.slice(0, 500);
+      for (const kw of matchedKeywords) {
+        try {
+          highlight = highlight.replace(
+            new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+            `**${kw}**`
+          );
+        } catch { /* ignore regex errors */ }
+      }
+
+      results.push({
+        chunk,
+        score: sr.entry.frequency / 500,
+        source: 'entity',
+        highlight,
+      });
+
+      if (results.length >= topK) break;
+    }
+    if (results.length >= topK) break;
+  }
+
+  return results;
 }
 
 /**
@@ -271,35 +422,31 @@ function entityRecall(
 export interface RoutedSearchResult {
   results: SearchResult[];
   /** 检索方法 */
-  method: 'rrf' | 'entity' | 'structured' | 'hybrid';
-  /** 匹配到的实体关键字（entity/structured 方法时） */
+  method: 'rrf' | 'entity';
+  /** 匹配到的实体关键字（entity 方法时） */
   matchedKeywords?: string[];
-  /** 结构化查询结果摘要（structured 方法时） */
+  /** 结构化查询结果摘要 */
   structSummary?: string;
 }
 
 /**
- * 智能路由检索
+ * 简化路由检索：两条路径
  *
- * 支持三种检索路径：
- * 1. 实体精确召回（entity）：query 包含已知实体/概念，用 wikiLinks 倒排索引召回
- * 2. RRF 融合检索（rrf）：通用语义检索，向量+BM25
- * 3. 结构化数据库检索（structured）：精确查询概念/实体关联的文档列表（新增）
- * 4. 混合检索（hybrid）：结构化 + RRF 融合（新增）
+ * 1. 有实体匹配 → 结构化查询，返回包含实体的上下文片段（±200 token）
+ * 2. 无实体匹配 → RRF 融合检索（向量+BM25）
  */
 export async function routedSearch(
   query: string,
   topK: number = 10,
   options?: {
     /** 强制使用指定检索方法 */
-    forceMethod?: 'rrf' | 'entity' | 'structured' | 'hybrid';
-    /** LLM API 配置（用于智能路由） */
+    forceMethod?: 'rrf' | 'entity';
+    /** LLM API 配置（保留兼容） */
     apiKey?: string;
     baseURL?: string;
     model?: string;
   }
 ): Promise<RoutedSearchResult> {
-  // 如果强制指定了方法，直接走对应路径
   if (options?.forceMethod) {
     return forceSearch(query, topK, options.forceMethod);
   }
@@ -307,84 +454,32 @@ export async function routedSearch(
   const matched = extractEntityKeywords(query);
 
   if (matched.length > 0) {
-    // ================================================================
-    // 多路召回：尝试结构化数据库查询
-    // ================================================================
+    console.log(`[EntityRouter] 匹配到实体关键字: [${matched.join(', ')}]，使用结构化检索`);
+
     try {
       const { isStructDbReady, executeStructuredQuery, formatStructResults } = await import('./structSearchEngine');
 
       if (isStructDbReady()) {
-        // 用 LLM 智能路由判断走哪条路（从 queryRewriter 获取路由决策）
-        const { smartRewrite } = await import('./queryRewriter');
-        const rewriteResult = await smartRewrite(query, {
-          apiKey: options?.apiKey,
-          baseURL: options?.baseURL,
-          model: options?.model,
-        });
+        const structResults = await executeStructuredQuery(matched, 'or');
+        const structSummary = formatStructResults(structResults);
 
-        const routeDecision = rewriteResult.routeDecision;
-        const route = routeDecision?.route || (rewriteResult.entities.length > 0 ? 'hybrid' : 'semantic');
-        console.log(`[EntityRouter] 智能路由决策: ${route} (entities: ${rewriteResult.entities.join(', ') || '无'})`);
+        const entityResults = await entityRecallWithContext(matched, structResults, topK);
 
-        if (route === 'structured') {
-          // 纯结构化查询：从 SQLite 查关联文档列表，不碰向量库
-          const structResults = await executeStructuredQuery(rewriteResult.entities.length > 0 ? rewriteResult.entities : matched, 'or');
-          const structSummary = formatStructResults(structResults);
-
-          if (structResults.length > 0 && structSummary) {
-            // structured 模式：返回空 results，纯靠 structSummary 喂给 LLM
-            return {
-              results: [],
-              method: 'structured',
-              matchedKeywords: rewriteResult.entities.length > 0 ? rewriteResult.entities : matched,
-              structSummary,
-            };
-          }
-        }
-
-        if (route === 'hybrid') {
-          // 混合检索：结构化结果 + RRF 结果融合
-          const queryEntries = rewriteResult.entities.length > 0 ? rewriteResult.entities : matched;
-          const structResults = await executeStructuredQuery(queryEntries, 'or');
-          const structSummary = formatStructResults(structResults);
-
-          // 结构化文档 chunk
-          const structChunks = structResults.length > 0
-            ? await loadStructDocChunks(structResults, query, Math.ceil(topK / 2))
-            : [];
-
-          // RRF 检索（传入实体关键字用于过滤向量噪音）
-          const rrfResults = await hybridSearch(query, topK, 20, 20, {
-            matchedKeywords: matched.length > 0 ? matched : undefined,
-          });
-
-          // 合并去重
-          const structIds = new Set(structChunks.map(r => r.chunk.id));
-          const merged = [
-            ...structChunks,
-            ...rrfResults.filter(r => !structIds.has(r.chunk.id)),
-          ].slice(0, topK);
-
+        if (entityResults.length > 0) {
           return {
-            results: merged,
-            method: 'hybrid',
-            matchedKeywords: queryEntries,
+            results: entityResults,
+            method: 'entity',
+            matchedKeywords: matched,
             structSummary,
           };
         }
       }
     } catch (err) {
-      console.warn('[EntityRouter] 智能路由失败，降级为实体召回:', err);
+      console.warn('[EntityRouter] 结构化检索失败，降级为倒排索引:', err);
     }
-
-    // ================================================================
-    // 降级：走原有的实体召回路径
-    // ================================================================
-    console.log(`[EntityRouter] 匹配到实体关键字: [${matched.join(', ')}]，使用实体召回`);
 
     const entityResults = entityRecall(matched, topK);
 
-    // 如果实体召回不足 topK，用 RRF 补充
     if (entityResults.length < topK) {
       const needMore = topK - entityResults.length;
       const entityChunkIds = new Set(entityResults.map(r => r.chunk.id));
@@ -404,7 +499,6 @@ export async function routedSearch(
     };
   }
 
-  // 无实体匹配，走 RRF
   console.log(`[EntityRouter] 未匹配到实体关键字，使用 RRF 融合检索`);
   const rrfResults = await hybridSearch(query, topK, 20, 20, {
     matchedKeywords: matched.length > 0 ? matched : undefined,
@@ -416,161 +510,42 @@ export async function routedSearch(
 }
 
 /**
- * 从结构化查询结果加载对应的文档 chunk（两表结构版本）
- * 支持两种来源：
- *   1. Raw 文档：从 chunks_meta 加载具体 chunk
- *   2. Wiki 词条：直接加载 Wiki 目录中的原始 markdown 文件
- */
-async function loadStructDocChunks(
-  structResults: import('./structSearchEngine').StructSearchResult[],
-  query: string,
-  topK: number
-): Promise<SearchResult[]> {
-  const allChunksData = loadAllChunks();
-  const wikiDir = path.join(process.cwd(), 'Wiki');
-
-  const results: SearchResult[] = [];
-  const seenChunkIds = new Set<string>();
-  const seenEntryNames = new Set<string>();
-
-  for (const sr of structResults) {
-    if (seenEntryNames.has(sr.entry.name)) continue;
-    seenEntryNames.add(sr.entry.name);
-
-    if (sr.entry.type === 'concept' && sr.entry.path) {
-      const wikiFilePath = path.join(wikiDir, sr.entry.path);
-      if (fs.existsSync(wikiFilePath)) {
-        const wikiContent = fs.readFileSync(wikiFilePath, 'utf-8');
-        
-        const chunk: DocChunk = {
-          id: `wiki_${sr.entry.name}`,
-          docId: `wiki_${sr.entry.name}`,
-          docTitle: sr.entry.name,
-          docPath: sr.entry.path,
-          chunkIndex: 0,
-          content: wikiContent,
-          metadata: {
-            docType: 'wiki',
-          },
-          wikiLinks: [],
-        };
-
-        let highlight = wikiContent.slice(0, 500);
-        const matchedEntryNames = structResults.map(r => r.entry.name);
-        for (const kw of matchedEntryNames) {
-          try {
-            highlight = highlight.replace(
-              new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
-              `**${kw}**`
-            );
-          } catch { /* ignore regex errors */ }
-        }
-
-        results.push({
-          chunk,
-          score: (sr.entry.frequency + 100) / 500,
-          source: 'entity',
-          highlight,
-        });
-
-        if (results.length >= topK) break;
-        continue;
-      }
-    }
-
-    for (const structChunk of sr.chunks) {
-      const chunkId = structChunk.chunk_id;
-      if (seenChunkIds.has(chunkId)) continue;
-      seenChunkIds.add(chunkId);
-
-      const chunkData = allChunksData[chunkId];
-      if (!chunkData) continue;
-
-      const chunk: DocChunk = {
-        id: chunkId,
-        docId: chunkData.docId,
-        docTitle: chunkData.docTitle,
-        docPath: chunkData.docPath,
-        chunkIndex: 0,
-        content: chunkData.content,
-        metadata: chunkData.metadata,
-        wikiLinks: chunkData.wikiLinks || [],
-      };
-
-      let highlight = chunk.content.slice(0, 500);
-      const matchedEntryNames = structResults.map(r => r.entry.name);
-      for (const kw of matchedEntryNames) {
-        try {
-          highlight = highlight.replace(
-            new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
-            `**${kw}**`
-          );
-        } catch { /* ignore regex errors */ }
-      }
-
-      results.push({
-        chunk,
-        score: sr.entry.frequency / 500,
-        source: 'entity',
-        highlight,
-      });
-
-      if (results.length >= topK) break;
-    }
-    if (results.length >= topK) break;
-  }
-
-  return results;
-}
-
-/**
  * 强制指定检索方法
  */
 async function forceSearch(
   query: string,
   topK: number,
-  method: 'rrf' | 'entity' | 'structured' | 'hybrid'
+  method: 'rrf' | 'entity'
 ): Promise<RoutedSearchResult> {
   const matched = extractEntityKeywords(query);
 
-  if (method === 'structured' || method === 'hybrid') {
+  if (method === 'entity' && matched.length > 0) {
     try {
       const { isStructDbReady, executeStructuredQuery, formatStructResults } = await import('./structSearchEngine');
 
-      if (isStructDbReady() && matched.length > 0) {
+      if (isStructDbReady()) {
         const structResults = await executeStructuredQuery(matched, 'or');
         const structSummary = formatStructResults(structResults);
 
-        if (method === 'structured') {
-          // 纯结构化：不加载文档 chunk，直接用 structSummary 喂 LLM
-          return { results: [], method: 'structured', matchedKeywords: matched, structSummary };
-        }
+        const entityResults = await entityRecallWithContext(matched, structResults, topK);
 
-        // hybrid
-        const structChunks = structResults.length > 0
-          ? await loadStructDocChunks(structResults, query, Math.ceil(topK / 2))
-          : [];
-        const rrfResults = await hybridSearch(query, topK, 20, 20, {
-          matchedKeywords: matched.length > 0 ? matched : undefined,
-        });
-        const structIds = new Set(structChunks.map(r => r.chunk.id));
-        const merged = [
-          ...structChunks,
-          ...rrfResults.filter(r => !structIds.has(r.chunk.id)),
-        ].slice(0, topK);
-        return { results: merged, method: 'hybrid', matchedKeywords: matched, structSummary };
+        if (entityResults.length > 0) {
+          return {
+            results: entityResults,
+            method: 'entity',
+            matchedKeywords: matched,
+            structSummary,
+          };
+        }
       }
     } catch (err) {
-      console.warn('[EntityRouter] 强制结构化检索失败，降级:', err);
+      console.warn('[EntityRouter] 强制实体检索失败，降级:', err);
     }
-  }
 
-  if (method === 'entity' && matched.length > 0) {
     const entityResults = entityRecall(matched, topK);
     return { results: entityResults, method: 'entity', matchedKeywords: matched };
   }
 
-  // 默认走 RRF（传入实体关键字用于过滤向量噪音）
   const rrfResults = await hybridSearch(query, topK, 20, 20, {
     matchedKeywords: matched.length > 0 ? matched : undefined,
   });

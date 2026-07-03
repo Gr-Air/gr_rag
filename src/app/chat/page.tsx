@@ -435,16 +435,24 @@ function StructResultCard({
   const [expanded, setExpanded] = useState(false);
 
   const lines = structSummary.split("\n").filter((l) => l.trim());
-  const sections: { keyword: string; freq: number; docs: string[] }[] = [];
+  const sections: { keyword: string; freq: number; docs: { name: string; chunks: string[] }[] }[] = [];
 
-  let currentSection: { keyword: string; freq: number; docs: string[] } | null = null;
+  let currentSection: { keyword: string; freq: number; docs: { name: string; chunks: string[] }[] } | null = null;
+  let currentDoc: { name: string; chunks: string[] } | null = null;
+
   for (const line of lines) {
     const headingMatch = line.match(/^### (.+?)\(频次:\s*(\d+)\)/);
     if (headingMatch) {
       if (currentSection) sections.push(currentSection);
       currentSection = { keyword: headingMatch[1].trim(), freq: parseInt(headingMatch[2]), docs: [] };
+      currentDoc = null;
     } else if (line.startsWith("  - ") && currentSection) {
-      currentSection.docs.push(line.replace(/^\s*-\s*/, "").trim());
+      const docName = line.replace(/^\s*-\s*/, "").trim();
+      currentDoc = { name: docName, chunks: [] };
+      currentSection.docs.push(currentDoc);
+    } else if (line.startsWith("    ") && currentDoc) {
+      const chunkContent = line.trim();
+      currentDoc.chunks.push(chunkContent);
     }
   }
   if (currentSection) sections.push(currentSection);
@@ -473,18 +481,29 @@ function StructResultCard({
 
       {expanded && (
         <div className="mt-1 mx-6 mb-1 animate-fade-in-up">
-          <div className="text-[11px] leading-relaxed text-slate-600 bg-indigo-50/50 border border-indigo-100 rounded-xl px-3 py-2 max-h-64 overflow-y-auto">
+          <div className="text-[11px] leading-relaxed text-slate-600 bg-indigo-50/50 border border-indigo-100 rounded-xl px-3 py-2 max-h-80 overflow-y-auto">
             {sections.map((section, si) => (
               <div key={si} className={si > 0 ? "mt-2 pt-2 border-t border-indigo-100/50" : ""}>
-                <div className="font-semibold text-indigo-700 mb-0.5">
+                <div className="font-semibold text-indigo-700 mb-1">
                   {section.keyword}
                   <span className="font-normal text-slate-400 ml-1">({section.freq})</span>
                 </div>
-                <ul className="space-y-0.5">
+                <div className="space-y-1">
                   {section.docs.map((doc, di) => (
-                    <li key={di} className="text-slate-500 pl-3">· {doc}</li>
+                    <div key={di} className="pl-2">
+                      <div className="text-slate-500 text-[11px]">· {doc.name}</div>
+                      {doc.chunks.length > 0 && (
+                        <div className="mt-0.5 pl-2 space-y-0.5">
+                          {doc.chunks.map((chunk, ci) => (
+                            <div key={ci} className="text-slate-400 text-[10px] bg-white/50 rounded px-1.5 py-0.5 border border-indigo-50">
+                              {chunk}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
-                </ul>
+                </div>
               </div>
             ))}
           </div>

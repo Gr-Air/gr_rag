@@ -242,10 +242,14 @@ export async function executeStructuredQuery(
 
   if (matchedEntries.length === 1) {
     const result = queryChunksByEntry(matchedEntries[0]);
-    return result ? [result] : [];
+    if (result && result.entry.type === 'entity') {
+      return [result];
+    }
+    return [];
   }
 
-  return queryChunksByEntries(matchedEntries, mode);
+  const results = queryChunksByEntries(matchedEntries, mode);
+  return results.filter(r => r.entry.type === 'entity');
 }
 
 export function formatStructResults(results: StructSearchResult[]): string {
@@ -257,20 +261,29 @@ export function formatStructResults(results: StructSearchResult[]): string {
     const typeLabel = r.entry.type === 'concept' ? '概念' : '实体';
     lines.push(`### ${typeLabel}「${r.entry.name}」(频次: ${r.entry.frequency})`);
 
-    if (r.chunks.length === 0) {
+    const filteredChunks = r.chunks.filter(c => !c.chunk_id.startsWith('wiki_'));
+
+    if (filteredChunks.length === 0) {
       lines.push('  - (无关联文档)\n');
       continue;
     }
 
-    const docIds = new Set<string>();
-    for (const chunk of r.chunks) {
+    const chunkGroups: Record<string, typeof filteredChunks> = {};
+    for (const chunk of filteredChunks) {
       const docId = chunk.chunk_id.replace(/_\d+$/, '');
-      docIds.add(docId);
+      if (!chunkGroups[docId]) chunkGroups[docId] = [];
+      chunkGroups[docId].push(chunk);
     }
 
-    for (const docId of docIds) {
+    for (const [docId, chunks] of Object.entries(chunkGroups)) {
       const cleanDocId = docId.replace(/^raw_/, '');
       lines.push(`  - ${cleanDocId}`);
+
+      for (const chunk of chunks) {
+        const chunkIndex = chunk.chunk_id.match(/(\d+)$/)?.[1] || '';
+        const chunkContent = chunk.context?.length > 200 ? chunk.context.slice(0, 200) + '...' : chunk.context;
+        lines.push(`    ${chunkIndex ? `[chunk ${chunkIndex}] ` : ''}${chunkContent || '(无上下文)'}`);
+      }
     }
     lines.push('');
   }

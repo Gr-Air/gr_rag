@@ -51,7 +51,7 @@ export interface WikiEntry {
 export type SearchSource = 'vector' | 'bm25' | 'hybrid' | 'entity' | 'structured';
 
 /** 检索方法 */
-export type SearchMethod = 'rrf' | 'entity' | 'structured' | 'hybrid';
+export type SearchMethod = 'rrf' | 'entity';
 
 /** 搜索结果 */
 export interface SearchResult {

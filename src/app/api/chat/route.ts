@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
         let results: SearchResult[] = [];
         let structSummary: string | undefined;
         let entityDocsContent: string | undefined;
-        let searchMethod: 'rrf' | 'entity' | 'structured' | 'hybrid' = 'rrf';
+        let searchMethod: 'rrf' | 'entity' = 'rrf';
 
         if (matched.length > 0) {
           // 有实体关键词命中：从 SQLite 查关联文档列表，加载 Raw 全文/片段
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
           if (entityResult) {
             structSummary = entityResult.structSummary;
             entityDocsContent = entityResult.docsContent;
-            searchMethod = 'structured';
+            searchMethod = 'entity';
             console.log(`[Chat] 实体关联命中: [${matched.join(', ')}] (${rewriteResult.method})，跳过语义检索`);
           }
         }
