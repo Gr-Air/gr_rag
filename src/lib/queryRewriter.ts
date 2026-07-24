@@ -238,17 +238,33 @@ export async function rewriteQuery(
 
   try {
     const client = new OpenAI({ apiKey, baseURL: baseURL || undefined });
+
+    // 推理模型（mimo 等）会将大部分 token 消耗在 reasoning_content 上，
+    // 需要预留足够 token 给最终的 content 输出；同时推理模型不支持 temperature 参数
+    const isReasoningModel = model.toLowerCase().includes('mimo') || model.toLowerCase().includes('reasoning');
+
     const response = await client.chat.completions.create({
       model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      temperature: 0,
-      max_tokens: 300,
+      ...(isReasoningModel ? {} : { temperature: 0 }),
+      // 推理模型：不设 max_tokens 让模型自然结束；
+      // 非推理模型：300 token 足够输出 JSON
+      ...(isReasoningModel ? {} : { max_tokens: 300 }),
     });
 
-    const content = response.choices[0]?.message?.content || '';
+    let content = response.choices[0]?.message?.content || '';
+
+    // 推理模型有时 content 为空但 reasoning_content 中有内容（max_tokens 不足时）
+    // 此时放弃解析，直接降级
+    if (!content) {
+      const reasonLen = (response.choices[0]?.message as any)?.reasoning_content?.length || 0;
+      console.warn(`[QueryRewriter] LLM 返回空 content (reasoning_content 长度: ${reasonLen})`);
+      return null;
+    }
+
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.warn('[QueryRewriter] LLM 返回格式异常:', content.slice(0, 200));

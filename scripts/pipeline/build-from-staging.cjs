@@ -22,7 +22,7 @@ const { loadEnv } = require('../lib/envLoader.cjs');
 loadEnv();
 
 // 公共模块
-const { tokenizeAll } = require('../lib/tokenizer.cjs');
+const { tokenizeAll, tokenizeAllFiltered } = require('../lib/tokenizer.cjs');
 const { getEmbeddingsBatch } = require('../lib/embedder.cjs');
 const { extractWikiLinks, parseFilename, extractTitle } = require('../lib/chunker.cjs');
 const { buildStateSnapshot } = require('../lib/hasher.cjs');
@@ -117,8 +117,12 @@ async function main() {
       process.exit(1);
     }
 
-    // 准备文本（取前 2000 字符用于向量化）
-    const vecTexts = allChunks.map(c => c.content.slice(0, 2000));
+    // 准备文本：优先用 summary（更精炼），降级到 content
+    // summary 通常 100-200 字，比原始 content（200-1000 字）更聚焦
+    const vecTexts = allChunks.map(c => {
+      const text = c.summary || c.content;
+      return text.slice(0, 2000);
+    });
     console.log(`  共 ${vecTexts.length} 条文本待向量化，维度: ${DIM}`);
 
     // 批量调用 embedding API
@@ -145,6 +149,9 @@ async function main() {
       docPath: chunk.docPath || '',
       chunkIndex: chunk.chunkIndex ?? 0,
       content: chunk.content.slice(0, 3000),
+      summary: chunk.summary || '',
+      keywords: JSON.stringify(chunk.keywords || []),
+      entities: JSON.stringify(chunk.entities || []),
       vector: allVectors[i],
       metadata_client: chunk.metadata?.client || '',
       metadata_project: chunk.metadata?.project || '',
@@ -191,7 +198,7 @@ async function main() {
 
     for (let i = 0; i < allChunks.length; i++) {
       const c = allChunks[i];
-      const tokens = tokenizeAll(c.content);
+      const tokens = tokenizeAllFiltered(c.content);
       docLengths[c.id] = tokens.length;
 
       const tfMap = new Map();

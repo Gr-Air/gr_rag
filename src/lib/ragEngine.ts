@@ -7,8 +7,11 @@
 import { hybridSearch, expandToParentContext, adaptiveContextWindow } from './hybridSearch';
 import { SearchResult } from './types';
 import OpenAI from 'openai';
-import { isFollowUpQuery } from './sessionManager';
 import { rerank } from './reranker';
+import { PromptTemplate } from './promptTemplate';
+
+/** 提示词模板实例（复用） */
+const promptTemplate = new PromptTemplate();
 
 /** 构建 RAG Prompt（全量加载所有 chunk，不做截断） */
 function buildRAGPrompt(
@@ -19,13 +22,9 @@ function buildRAGPrompt(
     entityDocsContent?: string;
     conversationContext?: string;
     isFollowUp?: boolean;
+    intent?: string;
   }
 ): { systemPrompt: string; userPrompt: string } {
-  const structSummary = options?.structSummary;
-  const entityDocsContent = options?.entityDocsContent;
-  const conversationContext = options?.conversationContext;
-  const isFollowUp = options?.isFollowUp;
-
   // 构建文档上下文（混合检索结果 + 可选的数据库查询提示词）
   const sorted = [...searchResults].sort((a, b) => b.score - a.score);
   const contextParts: string[] = [];
@@ -48,42 +47,17 @@ function buildRAGPrompt(
     contextParts.push(`${header}\n${chunk.content}`);
   }
 
-  let context = contextParts.join('\n\n---\n\n');
+  const context = contextParts.join('\n\n---\n\n');
 
-  // 如果有匹配实体的 Raw 文档全文，最优先注入（最重要、最完整的上下文）
-  if (entityDocsContent) {
-    context = `## 实体关联文档全文\n\n${entityDocsContent}\n\n---\n\n${structSummary ? '## 结构化关联查询结果\n\n' + structSummary + '\n\n---\n\n' : ''}## 语义检索文档内容\n\n${context}`;
-  } else if (structSummary) {
-    // 如果有结构化数据库查询结果，作为提示词前置注入
-    context = `## 结构化关联查询结果\n\n${structSummary}\n\n---\n\n## 语义检索文档内容\n\n${context}`;
-  }
-
-  const systemPrompt = `你是一个企业内部项目文档知识库的智能助手，名为"星辰Wiki助手"。
-你的知识来源于企业项目文档库，包括技术方案、架构设计、需求文档、测试报告、项目进度等。
-
-回答规则：
-1. 基于提供的文档上下文回答问题，不要编造信息
-2. 如果文档上下文中没有相关信息，诚实告知用户"当前知识库中暂无相关信息"
-3. 回答要简洁、专业，适合企业内部使用
-4. 引用文档时，注明文档标题和来源
-5. 如果涉及多个文档的信息，综合归纳后给出答案
-6. 对于技术问题，给出具体的技术细节
-7. 对于项目进度/人员相关问题，基于文档中的具体数据回答
-8. 使用中文回答
-9. 如果上下文中有"实体关联文档全文"，这些是与问题实体直接相关的完整文档，优先基于这些文档回答
-10. 如果上下文中有"结构化关联查询结果"，优先用它来回答文档列表/关联类问题
-11. 如果上下文中包含对话历史，请结合历史理解用户的追问意图，但不要重复引用历史的完整内容`;
-
-  let userPrompt = '请基于以下文档内容回答用户的问题。\n\n';
-
-  // 如果有对话历史上下文，前置添加
-  if (conversationContext) {
-    userPrompt += `${conversationContext}\n\n---\n\n`;
-  }
-
-  userPrompt += `## 参考文档\n\n${context}\n\n## 用户问题\n\n${query}\n\n请基于上述文档内容，给出准确、专业的回答：`;
-
-  return { systemPrompt, userPrompt };
+  return promptTemplate.build({
+    context,
+    query,
+    conversationContext: options?.conversationContext,
+    isFollowUp: options?.isFollowUp,
+    intent: options?.intent,
+    entityDocsContent: options?.entityDocsContent,
+    structSummary: options?.structSummary,
+  });
 }
 
 /** 流式 RAG 回答 */
@@ -202,7 +176,7 @@ export async function* ragChatStream(
 
   // Step 3: 调用 LLM 流式输出
   if (!apiKey) {
-    yield* noLLMFallback(searchResults, options?.structSummary);
+    yield* noLLMFallback(searchResults);
     return;
   }
 
@@ -233,17 +207,17 @@ export async function* ragChatStream(
       }
     }
 
-    yield { type: 'done' };
-  } catch (err: any) {
-    console.error('[RAG] LLM 调用失败:', err);
-    yield { type: 'error', content: `LLM 调用失败: ${err.message || '未知错误'}` };
+    yield { type: 'done', results: searchResults };
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.error('[RAG] LLM 调用失败:', error);
+    yield { type: 'error', content: `LLM 调用失败: ${error.message || '未知错误'}` };
   }
 }
 
 /** 无 LLM 时的降级方案：基于检索结果生成结构化摘要 */
 async function* noLLMFallback(
-  searchResults: SearchResult[],
-  _structSummary?: string
+  searchResults: SearchResult[]
 ): AsyncGenerator<{ type: 'context' | 'token' | 'done' | 'error'; content?: string; results?: SearchResult[] }> {
   yield {
     type: 'token',

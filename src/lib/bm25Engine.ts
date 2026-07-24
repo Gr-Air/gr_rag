@@ -5,7 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import { DocChunk } from './types';
-import { tokenize } from './tokenizer';
+import { tokenizeFiltered } from './tokenizer';
 
 const DATA_DIR = path.join(process.cwd(), 'src', 'data');
 const BM25_DIR = path.join(DATA_DIR, 'bm25');
@@ -66,7 +66,7 @@ export async function bm25Search(
   const lengths = getDocLengths();
   if (!meta || !lengths) return [];
 
-  const tokens = tokenize(query);
+  const tokens = tokenizeFiltered(query);
   const scores = new Map<string, number>();
   const k1 = 1.5;
   const b = 0.75;

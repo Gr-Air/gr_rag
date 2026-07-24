@@ -17,13 +17,15 @@
   "dependencies": {
     "@lancedb/lancedb": "^0.30.0",
     "@node-rs/jieba": "^2.0.1",
+    "@types/redis": "^4.0.10",
     "apache-arrow": "^18.1.0",
     "better-sqlite3": "^12.10.0",
     "next": "16.2.6",
     "node-fetch": "^3.3.2",
     "openai": "^6.39.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "redis": "^6.1.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

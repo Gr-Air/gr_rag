@@ -6,6 +6,8 @@ import { hybridSearch } from '@/lib/hybridSearch';
 import { isIndexReady } from '@/lib/indexManager';
 import { smartRewrite, fallbackRoute } from '@/lib/queryRewriter';
 import { executeStructuredQuery, formatStructResults } from '@/lib/structSearchEngine';
+import { getQueryEmbedding } from '@/lib/embedding';
+import { searchCache, saveCache, initCache } from '@/lib/ragCache';
 
 import type { SearchResult } from '@/lib/types';
 import { lookupIndexByQuery, isIndexQuery } from '@/lib/indexLookup';
@@ -18,6 +20,8 @@ import {
   isFollowUpQuery,
   compressConversation,
 } from '@/lib/sessionManager';
+
+initCache().catch(() => {});
 
 export async function POST(req: NextRequest) {
   const {
@@ -74,9 +78,55 @@ export async function POST(req: NextRequest) {
           ? routeDecision.isFollowUp
           : isFollowUpQuery(trimmedQuery); // fallback: 本地硬编码追问检测
 
+        // 0.5. 缓存检查：非追问且有改写结果时查缓存
+        let cachedResult = null;
+        if (!isFollowUp && rewriteResult.method === 'llm') {
+          try {
+            const queryEmbedding = await getQueryEmbedding(rewrittenQuery);
+            cachedResult = await searchCache(queryEmbedding);
+          } catch {
+            // embedding 生成失败或 Redis 不可用，跳过缓存
+          }
+        }
+
         // 路由降级：LLM 不可用时用正则匹配
         const fallbackRouteResult = routeDecision ? null : fallbackRoute(trimmedQuery, matched);
         const effectiveRoute = routeDecision?.route ?? fallbackRouteResult?.route ?? 'semantic';
+
+        // 缓存命中时快速返回
+        if (cachedResult) {
+          console.log(`[Cache] 命中语义缓存: "${rewrittenQuery.slice(0, 30)}..."`);
+          addMessage(session.id, 'assistant', cachedResult.answer);
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: 'method',
+                method: 'cache' as const,
+                cached: true,
+              })}\n\n`
+            )
+          );
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                type: 'context',
+                cached: true,
+              })}\n\n`
+            )
+          );
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: 'token', content: cachedResult.answer })}\n\n`
+            )
+          );
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: 'done', sessionId: session.id, cached: true })}\n\n`
+            )
+          );
+          controller.close();
+          return;
+        }
 
         // 追问时补充上下文
         let enrichedQuery = trimmedQuery;
@@ -210,6 +260,29 @@ export async function POST(req: NextRequest) {
             if (fullAnswer) {
               addMessage(session.id, 'assistant', fullAnswer);
             }
+
+            // 写入缓存：非追问且有改写结果时缓存
+            if (!isFollowUp && rewriteResult.method === 'llm' && fullAnswer && event.results) {
+              try {
+                const queryEmbedding = await getQueryEmbedding(rewrittenQuery);
+                const contextChunks = event.results.map(r => r.chunk.content) || [];
+                const contextSources = event.results.map(r => 
+                  r.chunk.docPath?.replace(/^Raw\//, '').replace(/\.md$/, '') || r.chunk.docTitle || ''
+                ) || [];
+                await saveCache({
+                  query: rewrittenQuery,
+                  embedding: queryEmbedding,
+                  answer: fullAnswer,
+                  contexts: contextChunks,
+                  sources: contextSources,
+                  timestamp: Date.now(),
+                  topK: topK as number,
+                });
+              } catch {
+                // 缓存写入失败，不影响主流程
+              }
+            }
+
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({ type: 'done', sessionId: session.id })}\n\n`
@@ -219,10 +292,11 @@ export async function POST(req: NextRequest) {
         }
 
         controller.close();
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ type: 'error', content: err.message })}\n\n`
+            `data: ${JSON.stringify({ type: 'error', content: error.message })}\n\n`
           )
         );
         controller.close();

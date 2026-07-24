@@ -88,17 +88,17 @@ export async function POST(req: NextRequest) {
     let results: SearchResult[] = [];
     let structSummary: string | undefined;
     let entityDocsContent: string | undefined;
+    let entitySources: string[] = [];
     let searchMethod: 'rrf' | 'entity' = 'rrf';
 
     // 实体关联文档加载（完整策略：短文档全文，长文档片段提取）
-    // 只有匹配到"客户企业"或"项目系统"才走结构化检索
-    // 结构化检索只使用客户企业实体，避免项目名称不匹配导致查不到目标文档
+    // 使用所有匹配的实体进行 OR 查询，确保精确匹配到目标文档
     if (matched.length > 0 && shouldUseStructuredSearch(matched)) {
-      const enterpriseEntities = extractEnterpriseEntities(matched);
-      const entityResult = await loadEntityDocsContent(enterpriseEntities);
+      const entityResult = await loadEntityDocsContent(matched);
       if (entityResult) {
         structSummary = entityResult.structSummary;
         entityDocsContent = entityResult.docsContent;
+        entitySources = entityResult.sources;
         searchMethod = 'entity';
       }
     }
@@ -145,6 +145,8 @@ export async function POST(req: NextRequest) {
       for await (const chunk of generator) {
         if (chunk.type === 'token' && chunk.content) {
           fullAnswer += chunk.content;
+        } else if (chunk.type === 'context' && chunk.results) {
+          finalResults = chunk.results;
         }
       }
       answer = fullAnswer || '未能生成回答';
@@ -157,16 +159,24 @@ export async function POST(req: NextRequest) {
 
     // 如果有实体文档内容，作为主要上下文
     if (entityDocsContent) {
-      contextChunks.unshift(entityDocsContent.slice(0, 2000)); // 截取前 2000 字符作为上下文
+      contextChunks.unshift(entityDocsContent.slice(0, 5000)); // 扩大上下文长度到 5000 字符
+    }
+
+    // 根据检索类型确定结果数量和来源
+    let finalNumResults = finalResults.length;
+    let finalSources = contextSources;
+    if (searchMethod === 'entity' && entitySources.length > 0) {
+      finalNumResults = entitySources.length;
+      finalSources = entitySources;
     }
 
     return new Response(JSON.stringify({
       query: trimmedQuery,
       answer,
       contexts: contextChunks,
-      sources: contextSources,
+      sources: finalSources,
       searchMethod,
-      numResults: finalResults.length,
+      numResults: finalNumResults,
       matchedEntities: matched,
     }), {
       headers: { 'Content-Type': 'application/json' },
@@ -217,20 +227,20 @@ function estimateTokens(text: string): number {
  */
 async function loadEntityDocsContent(
   matchedKeywords: string[],
-): Promise<{ structSummary: string; docsContent: string } | undefined> {
+): Promise<{ structSummary: string; docsContent: string; sources: string[] } | undefined> {
   const { isStructDbReady } = await import('@/lib/structSearchEngine');
   if (!isStructDbReady()) {
     console.warn('[Eval] 结构化数据库未就绪');
     return undefined;
   }
 
-  let structResults = await executeStructuredQuery(matchedKeywords, 'and');
+  let structResults = await executeStructuredQuery(matchedKeywords, 'or');
   
   const hasChunks = structResults.some(r => r.chunks.length > 0);
   
   if (!hasChunks) {
-    console.log(`[Eval] 结构化数据库 AND 查询未命中，尝试 OR 查询...`);
-    structResults = await executeStructuredQuery(matchedKeywords, 'or');
+    console.log(`[Eval] 结构化数据库 OR 查询未命中，尝试 AND 查询...`);
+    structResults = await executeStructuredQuery(matchedKeywords, 'and');
   }
   
   if (structResults.length === 0 || !structResults.some(r => r.chunks.length > 0)) {
@@ -324,9 +334,12 @@ async function loadEntityDocsContent(
     `[Eval] 实体关联文档加载: ${wikiCount} 篇 Wiki + ${shortCount} 篇全文 + ${snippetCount} 篇片段`,
   );
 
+  const sources = [...docNames, ...wikiEntries.keys()];
+
   return {
     structSummary,
     docsContent: parts.join('\n\n---\n\n'),
+    sources,
   };
 }
 

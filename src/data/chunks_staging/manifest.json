@@ -3973,5 +3973,9 @@
     "overlap": 0.1
   },
   "builtAt": "2026-06-30T16:09:40.987Z",
-  "gitCommit": "a697c12"
+  "gitCommit": "a697c12",
+  "summaryApplied": true,
+  "summaryModel": "qwen-plus",
+  "summaryVersion": "1.0.0",
+  "summaryAppliedAt": "2026-07-16T10:32:30.581Z"
 }

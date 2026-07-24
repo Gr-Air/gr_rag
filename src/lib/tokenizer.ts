@@ -48,6 +48,31 @@ const CUSTOM_WORDS = [
   '商务拓展部 100',
 ];
 
+// ============================================================
+// 中文停用词表（与 scripts/lib/tokenizer.cjs 保持一致）
+// ============================================================
+const STOPWORDS = new Set([
+  // 虚词/助词
+  '的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一',
+  '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着',
+  '没有', '看', '好', '自己', '这', '他', '她', '它', '们', '那',
+  '被', '从', '把', '对', '让', '给', '跟', '向', '往', '为',
+  '可以', '可能', '需要', '应该', '能够', '已经', '正在', '将要',
+  '这个', '那个', '这些', '那些', '什么', '怎么', '为什么', '多少',
+  '如果', '因为', '所以', '但是', '而且', '或者', '虽然', '不过',
+  '比较', '非常', '特别', '尤其', '几乎', '大概', '大约', '左右',
+  '以及', '等等', '之类', '通过', '进行', '使用', '采用', '利用',
+  '基于', '根据', '按照', '关于', '对于', '作为', '其中', '其中的',
+  '方面', '方式', '情况', '问题', '系统', '功能', '模块', '部分',
+  '该', '其', '此', '之', '且', '则', '而', '与', '或', '及',
+  // 单字动词/形容词
+  '用', '做', '来', '得', '能', '可', '把', '被', '于',
+  // 标点和特殊字符
+  ' ', '\t', '\n', '，', '。', '！', '？', '、', '；', '：',
+  '“', '”', '‘', '’', '（', '）', '【', '】', '《', '》',
+  '—', '…', '·', '～', '￥',
+]);
+
 let jiebaInstance: Jieba | null = null;
 
 /**
@@ -121,4 +146,40 @@ export function createTokenizer(): (text: string) => string[] {
     }
     return [...tokens];
   };
+}
+
+/**
+ * 中文分词 + 停用词过滤（去重，供 BM25 查询侧使用）
+ * @param text 待分词文本
+ * @returns 过滤后的词条列表
+ */
+export function tokenizeFiltered(text: string): string[] {
+  const jieba = getJieba();
+  const result = jieba.cut(text, false);
+  const tokens = new Set<string>();
+  for (const token of result) {
+    const trimmed = token.trim();
+    if (trimmed.length >= 1 && !STOPWORDS.has(trimmed)) {
+      tokens.add(trimmed);
+    }
+  }
+  return [...tokens];
+}
+
+/**
+ * 中文分词 + 停用词过滤（不去重，保留词频信息，供索引构建侧使用）
+ * @param text 待分词文本
+ * @returns 过滤后的分词结果（保留顺序）
+ */
+export function tokenizeAllFiltered(text: string): string[] {
+  const jieba = getJieba();
+  const result = jieba.cut(text, false);
+  const tokens: string[] = [];
+  for (const token of result) {
+    const trimmed = token.trim();
+    if (trimmed.length >= 1 && !STOPWORDS.has(trimmed)) {
+      tokens.push(trimmed);
+    }
+  }
+  return tokens;
 }

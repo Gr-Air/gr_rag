@@ -124,6 +124,7 @@ export async function hybridSearch(
   console.log(`[Hybrid] 查询: "${query}", topK=${topK}`);
 
   const matchedKeywords = options?.matchedKeywords;
+  const isEntityQuery = matchedKeywords && matchedKeywords.length > 0;
 
   // 查询类型识别和动态 topK
   // 宽泛查询（如"相关的项目文档有哪些？"）使用更小的 topK，避免召回过多不相关上下文
@@ -145,12 +146,16 @@ export async function hybridSearch(
   }
 
   // Step 1: 并行执行向量检索和 BM25 检索
+  // 对于无实体匹配的概括性查询，增加检索召回数量，确保能覆盖更多文档章节
+  const effectiveVectorTopN = isEntityQuery ? vectorTopN : vectorTopN * 2;
+  const effectiveBm25TopN = isEntityQuery ? bm25TopN : bm25TopN * 2;
+  
   const [vectorResults, bm25Results] = await Promise.all([
-    vectorSearch(query, vectorTopN).catch(err => {
+    vectorSearch(query, effectiveVectorTopN).catch(err => {
       console.error('[Hybrid] 向量检索失败:', err);
       return [] as Array<{ chunkId: string; score: number }>;
     }),
-    bm25Search(query, bm25TopN).catch(err => {
+    bm25Search(query, effectiveBm25TopN).catch(err => {
       console.error('[Hybrid] BM25 检索失败:', err);
       return [] as Array<{ chunkId: string; score: number }>;
     }),
@@ -194,7 +199,8 @@ export async function hybridSearch(
   }
 
   // Step 2: RRF 融合（传入实体过滤集合）
-  const fused = rrfFusion(vectorResults, bm25Results, topK, vectorEntityFilter);
+  const fusionTopK = isEntityQuery ? topK : topK * 3;
+  const fused = rrfFusion(vectorResults, bm25Results, fusionTopK, vectorEntityFilter);
 
   console.log(`[Hybrid] RRF 融合后 top${topK}:`);
   fused.forEach((r, i) => {
@@ -207,57 +213,40 @@ export async function hybridSearch(
   const chunkMap = new Map<string, DocChunk>();
   chunks.forEach(c => chunkMap.set(c.id, c));
 
-  // Step 4: 按文档去重，每个 docId 取内容最丰富的 chunk
-  // 同时合并所有 chunk 的向量/BM25 排名信息，确保 source 标签准确反映双源命中
-  const docBestChunk = new Map<string, {
+  // Step 4: 按文档聚合 chunks
+  // 策略：有实体匹配时每个文档取最佳 chunk（精准匹配）
+  //       无实体匹配时每个文档取多个 chunks（支持概括性查询）
+  const MAX_CHUNKS_PER_DOC = isEntityQuery ? 1 : 5;
+
+  const docChunks = new Map<string, Array<{
     chunk: DocChunk;
     rrfScore: number;
     vectorRank: number | null;
     bm25Rank: number | null;
-  }>();
+  }>>();
+  
+  const seenChunkIds = new Set<string>();
+  
   for (const f of fused) {
     const chunk = chunkMap.get(f.chunkId);
     if (!chunk) continue;
+    if (seenChunkIds.has(f.chunkId)) continue;
+    seenChunkIds.add(f.chunkId);
 
     const docId = chunk.docId || f.chunkId.replace(/_\d+$/, '');
-    const existing = docBestChunk.get(docId);
+    if (!docChunks.has(docId)) {
+      docChunks.set(docId, []);
+    }
 
-    // 判断是否为标题/元信息 chunk（以 # 开头且包含 | 表格元信息）
-    const isMetaChunk = chunk.content.trim().startsWith('#') && chunk.content.includes('|');
-
-    if (!existing) {
-      docBestChunk.set(docId, { chunk, rrfScore: f.rrfScore, vectorRank: f.vectorRank, bm25Rank: f.bm25Rank });
-    } else {
-      // 合并排名信息：同一文档的不同 chunk 可能分别来自向量和 BM25
-      const mergedVectorRank = existing.vectorRank ?? f.vectorRank;
-      const mergedBm25Rank = existing.bm25Rank ?? f.bm25Rank;
-      const mergedRrfScore = Math.max(f.rrfScore, existing.rrfScore);
-
-      if (isMetaChunk && !(existing.chunk.content.trim().startsWith('#') && existing.chunk.content.includes('|'))) {
-        // 已有更好的非 meta chunk，仅合并排名信息，不替换 chunk
-        docBestChunk.set(docId, {
-          chunk: existing.chunk,
-          rrfScore: mergedRrfScore,
-          vectorRank: mergedVectorRank,
-          bm25Rank: mergedBm25Rank,
-        });
-        continue;
-      } else if (!isMetaChunk && existing.chunk.content.length < chunk.content.length) {
-        // 替换为内容更丰富的 chunk，保留合并后的排名
-        docBestChunk.set(docId, {
-          chunk,
-          rrfScore: mergedRrfScore,
-          vectorRank: mergedVectorRank,
-          bm25Rank: mergedBm25Rank,
-        });
-      } else {
-        // 仅合并排名信息
-        docBestChunk.set(docId, {
-          chunk: existing.chunk,
-          rrfScore: mergedRrfScore,
-          vectorRank: mergedVectorRank,
-          bm25Rank: mergedBm25Rank,
-        });
+    const existingList = docChunks.get(docId)!;
+    if (existingList.length < MAX_CHUNKS_PER_DOC) {
+      const chunkTitle = chunk.content.split('\n')[0]?.trim() || '';
+      const hasSameTitle = existingList.some(e => {
+        const existingTitle = e.chunk.content.split('\n')[0]?.trim() || '';
+        return chunkTitle === existingTitle;
+      });
+      if (!hasSameTitle) {
+        existingList.push({ chunk, rrfScore: f.rrfScore, vectorRank: f.vectorRank, bm25Rank: f.bm25Rank });
       }
     }
   }
@@ -271,12 +260,12 @@ export async function hybridSearch(
   // 解决方案：计算每个文档包含多少个查询实体关键词，给予额外分数加成
   let entityBoostedCount = 0;
   if (matchedKeywords && matchedKeywords.length > 0) {
-    for (const [docId, entry] of docBestChunk) {
-      const content = entry.chunk.content;
+    for (const [docId, entries] of docChunks) {
+      const content = entries.map(e => e.chunk.content).join(' ');
       const matchedCount = matchedKeywords.filter(kw => content.includes(kw)).length;
       if (matchedCount > 0) {
         const entityBonus = matchedCount * ENTITY_MATCH_WEIGHT;
-        entry.rrfScore += entityBonus;
+        entries.forEach(e => e.rrfScore += entityBonus);
         entityBoostedCount++;
         console.log(`[Hybrid] 实体匹配度加成: [${docId}] 匹配 ${matchedCount} 个实体关键词，+${entityBonus} 分数`);
       }
@@ -287,9 +276,11 @@ export async function hybridSearch(
   }
 
   // Step 5: 组装最终结果（按 RRF 分数排序，归一化放大到 0~1 区间）
-  const sortedDocs = Array.from(docBestChunk.values())
+  const allChunks = Array.from(docChunks.values()).flat();
+  const finalTopK = isEntityQuery ? topK : topK * 2;
+  const sortedDocs = allChunks
     .sort((a, b) => b.rrfScore - a.rrfScore)
-    .slice(0, topK);
+    .slice(0, finalTopK);
 
   // RRF 分数归一化：RRF 原始值范围约 0.016~0.033，对用户不直观
   // 将最高分映射到 ~0.95，最低分保持相对比例
