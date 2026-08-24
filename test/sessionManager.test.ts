@@ -115,12 +115,11 @@ describe('sessionManager', () => {
         { chunk: { id: '1', content: 'test', docTitle: 'Test' } as any, score: 0.9, source: 'hybrid' as const, highlight: '**test**' },
       ];
 
-      saveLastSearchResults(session.id, '微服务', mockResults, 'rrf', 'struct summary');
+      saveLastSearchResults(session.id, '微服务', mockResults, 'rrf');
 
       const saved = getLastSearchResults(session.id)!;
       expect(saved.query).toBe('微服务');
       expect(saved.method).toBe('rrf');
-      expect(saved.structSummary).toBe('struct summary');
       expect(saved.results).toHaveLength(1);
     });
 

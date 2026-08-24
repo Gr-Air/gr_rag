@@ -2,9 +2,9 @@
 // Query Rewriting：LLM 改写用户 query + 统一路由决策
 //
 // 策略：
-//   1. 优先用 LLM 改写 query + 同时输出路由决策（追问/路由/窗口/index章节）
+//   1. 优先用 LLM 改写 query + 同时输出路由决策（追问/文档类型过滤）
 //   2. LLM 不可用时降级为本地硬编码规则（各模块保留正则作为 fallback）
-//   3. 一次 LLM 调用覆盖 queryRewriter + isFollowUp + smartRouter + adaptiveWindow + indexLookup
+//   3. 一次 LLM 调用覆盖 queryRewriter + isFollowUp + docType 过滤
 // ============================================================
 
 import OpenAI from 'openai';
@@ -14,11 +14,6 @@ import type { KnownEntityInfo } from './structSearchEngine';
 // 类型定义
 // ============================================================
 
-/** 检索路由决策 */
-export type RouteDecision = 'structured' | 'semantic' | 'hybrid';
-
-/** 上下文窗口大小 */
-export type ContextWindow = 1 | 2 | 3;
 
 export interface RewrittenQuery {
   /** 改写后的查询语句（用于向量/BM25 检索） */
@@ -27,23 +22,21 @@ export interface RewrittenQuery {
   entities: string[];
   /** 查询意图类型 */
   intent: 'fact' | 'list' | 'compare' | 'summary' | 'analysis' | 'other';
+  /** 最可能包含答案的文档类型（用于无实体命中时缩小检索范围） */
+  relevantDocTypes: string[];
   /** 改写理由（用于调试） */
   reason: string;
 }
 
 /**
  * LLM 统一路由决策结果
- * 一次 LLM 调用覆盖：追问检测、检索路由、上下文窗口、index 章节
+ * 一次 LLM 调用覆盖：追问检测、index 章节匹配
  */
 export interface LlmRouteDecision {
   /** 是否为追问（指代上一轮内容或纠错） */
   isFollowUp: boolean;
-  /** 检索路由：structured(查关联文档列表) / semantic(语义检索) / hybrid(混合) */
-  route: RouteDecision;
-  /** Small-to-Big 上下文窗口大小 */
-  contextWindow: ContextWindow;
-  /** index.md 命中的章节标题（如"客户列表"），无匹配时为 null */
-  indexSection: string | null;
+  /** 最可能包含答案的文档类型（用于无实体命中时缩小检索范围） */
+  relevantDocTypes: string[];
 }
 
 // ============================================================
@@ -125,10 +118,9 @@ function buildRewritePrompt(): string {
   // 取代表性样本（避免 prompt 过长）
   const sample = (arr: string[], max: number) => arr.slice(0, max).join('、');
 
-  return `你是一个知识库查询改写与路由助手。你的任务是：
+  return `你是一个知识库查询改写与实体提取助手。你的任务是：
 1. 改写用户的自然语言查询，使其更精准、更适合检索
 2. 从查询中提取结构化的实体关键词
-3. 判断查询的检索路由策略
 
 ## 知识库包含的实体类型
 
@@ -142,6 +134,11 @@ function buildRewritePrompt(): string {
 
 知识库的 index.md 包含以下章节可查询元信息：
 客户列表、文档类型、项目类型、概念索引、实体索引、客户企业、技术组件、项目系统、人员、部门、全部原始文档、知识库概览
+
+## 知识库文档类型
+
+知识库中的文档按以下类型分类（文件名中的 docType 字段）：
+客户项目验收、技术方案、技术架构设计、来往账目、系统测试报告、需求规格说明书、项目人员清单、项目管理计划、项目费用结算、项目进度汇报、大型台账
 
 ## 改写规则
 
@@ -163,20 +160,6 @@ function buildRewritePrompt(): string {
 - 序号追问："第二个呢"、"第三个怎么样"
 - 比较追问："它和XX比呢"
 
-### route（检索路由）
-- structured：查询想获取某概念/实体关联的文档列表（如"有哪些文档"、"哪些项目用了"、"徐峰负责哪些"、"有没有ERP相关"）
-- semantic：查询想理解内容、获取答案、分析总结（如"微服务是什么"、"为什么选择这个架构"、"对比方案"）
-- hybrid：既需要文档列表又需要内容分析（如"哪些客户做了ERP，进展如何"）
-
-### contextWindow（上下文窗口）
-- 1（小窗口）：简单事实查询，一两句话能回答（如"负责人是谁"、"什么时候开始"）
-- 2（中窗口）：需要理解完整段落（如"架构设计原则"、"对比两个方案"、"流程是什么"）
-- 3（大窗口）：需要跨段落数据或表格信息（如"回款金额多少"、"统计各项目进度"、"具体费用明细"）
-
-### indexSection（index.md章节命中）
-如果用户明确在问知识库的元信息（如"有哪些客户"、"知识库有多少文档"），填入对应的章节名；否则为 null。
-可匹配的章节：客户列表、文档类型、项目类型、概念索引、实体索引、客户企业、技术组件、项目系统、人员、部门、全部原始文档、知识库概览
-
 ## 输出格式
 
 严格输出一个 JSON 对象，不要有任何其他内容：
@@ -185,10 +168,8 @@ function buildRewritePrompt(): string {
   "rewritten": "改写后的查询语句",
   "entities": ["实体1", "实体2"],
   "intent": "fact|list|compare|summary|analysis|other",
+  "relevantDocTypes": ["文档类型1", "文档类型2"],
   "isFollowUp": true或false,
-  "route": "structured|semantic|hybrid",
-  "contextWindow": 1或2或3,
-  "indexSection": "章节名或null",
   "reason": "改写理由（中文，不超过20字）"
 }
 
@@ -198,7 +179,16 @@ function buildRewritePrompt(): string {
 - compare: 对比分析（如"对比两个方案"）
 - summary: 总结概括（如"总结项目进展"）
 - analysis: 分析评估（如"为什么选择这个架构"）
-- other: 其他`;
+- other: 其他
+
+### relevantDocTypes 说明
+根据查询语义，判断哪些文档类型最可能包含答案，从上述文档类型列表中选择1-3个。
+如果查询与具体文档类型无关（如纯概念查询），输出空数组 []。
+例如：
+- "项目验收进度" → ["客户项目验收", "项目进度汇报"]
+- "Redis怎么配置" → ["技术方案", "技术架构设计"]
+- "上月付款了多少" → ["来往账目", "项目费用结算"]
+- "CRM是什么" → []（概念查询，不限定文档类型）`;
 }
 
 /**
@@ -239,9 +229,9 @@ export async function rewriteQuery(
   try {
     const client = new OpenAI({ apiKey, baseURL: baseURL || undefined });
 
-    // 推理模型（mimo 等）会将大部分 token 消耗在 reasoning_content 上，
+    // 推理模型（如 deepseek-r1 等）会将大部分 token 消耗在 reasoning_content 上，
     // 需要预留足够 token 给最终的 content 输出；同时推理模型不支持 temperature 参数
-    const isReasoningModel = model.toLowerCase().includes('mimo') || model.toLowerCase().includes('reasoning');
+    const isReasoningModel = model.toLowerCase().includes('reasoning') || model.toLowerCase().includes('deepseek-r1');
 
     const response = await client.chat.completions.create({
       model,
@@ -300,16 +290,14 @@ export async function rewriteQuery(
     // 合并所有实体（去重）
     const allEntities = [...new Set([...validatedEntities, ...unknownEntities, ...decomposedEntities])];
 
-    // 解析路由决策字段
-    const route = ['structured', 'semantic', 'hybrid'].includes(parsed.route)
-      ? (parsed.route as RouteDecision)
-      : undefined;
-    const contextWindow = [1, 2, 3].includes(parsed.contextWindow)
-      ? (parsed.contextWindow as ContextWindow)
-      : undefined;
-    const indexSection = typeof parsed.indexSection === 'string' && parsed.indexSection.toLowerCase() !== 'null'
-      ? parsed.indexSection
-      : null;
+    // 校验 relevantDocTypes：只保留已知的文档类型
+    const knownDocTypes = new Set([
+      '客户项目验收', '技术方案', '技术架构设计', '来往账目', '系统测试报告',
+      '需求规格说明书', '项目人员清单', '项目管理计划', '项目费用结算', '项目进度汇报', '大型台账',
+    ]);
+    const relevantDocTypes = Array.isArray(parsed.relevantDocTypes)
+      ? parsed.relevantDocTypes.filter((t: string) => knownDocTypes.has(t))
+      : [];
 
     const result: RewrittenQuery = {
       rewritten: parsed.rewritten || query,
@@ -317,20 +305,19 @@ export async function rewriteQuery(
       intent: ['fact', 'list', 'compare', 'summary', 'analysis', 'other'].includes(parsed.intent)
         ? parsed.intent
         : 'other',
+      relevantDocTypes,
       reason: parsed.reason || 'LLM 改写',
     };
 
     const routeResult: LlmRouteDecision = {
       isFollowUp: parsed.isFollowUp === true,
-      route: route || 'semantic',
-      contextWindow: contextWindow || 2,
-      indexSection,
+      relevantDocTypes,
     };
 
     console.log(`[QueryRewriter] 改写: "${query}" → "${result.rewritten}"`);
     console.log(`[QueryRewriter] 实体: [${result.entities.join(', ')}] (已知:${validatedEntities.length} 未知:${unknownEntities.length})`);
     console.log(`[QueryRewriter] 意图: ${result.intent} | 理由: ${result.reason}`);
-    console.log(`[QueryRewriter] 路由: followUp=${routeResult.isFollowUp} route=${routeResult.route} window=${routeResult.contextWindow} indexSection=${routeResult.indexSection || '-'}`);
+    console.log(`[QueryRewriter] 路由: followUp=${routeResult.isFollowUp}`);
 
     return { ...result, routeDecision: routeResult } as RewrittenQuery & { routeDecision: LlmRouteDecision };
   } catch (err: any) {
@@ -343,112 +330,24 @@ export async function rewriteQuery(
 // 降级策略：正则路由判断（LLM 不可用时）
 // ============================================================
 
-/**
- * 结构化查询正则模式（LLM 降级策略）
- * 迁移自 smartRouter.ts，补充 spec 分析中识别的高频遗漏模式
- */
-const STRUCTURED_PATTERNS = [
-  /有哪些.*文档/,
-  /关联.*文档/,
-  /涉及.*(?:哪些|什么|多少).*文档/,
-  /列出.*(?:所有|全部).*文档/,
-  /.*相关的.*(?:所有|全部|哪些).*文档/,
-  /查.*文档列表/,
-  /.*的文档有哪些/,
-  /.*涉及了哪些/,
-  /哪些.*项目.*用到了/,
-  /哪些.*客户.*做/,
-  /.*在哪些.*中/,
-  /.*出现在.*哪些/,
-  /统计.*数量/,
-  /有多少.*文档/,
-  /有(?:哪|多少)(?:几?家|些|个)/,
-  /哪些.*(?:公司|项目|客户|部门|团队|系统|平台|产品|服务|应用)/,
-  /(?:公司|项目|客户|部门|团队).*用(?:了|过|到)/,
-  /(?:多少|几个).*(?:公司|项目|客户)/,
-  /(?:属于|归属).*(?:哪些|哪个|什么)/,
-  /(?:做了|在做|做过).*(?:哪些|什么)/,
-  /.*被.*(?:哪些|多少).*使用/,
-  /.*在.*哪些.*(?:公司|项目|客户)/,
-  // 补充：谁负责/谁在做类
-  /谁.*(?:负责|在做|参与)/,
-  /(?:负责|参与|做了).*(?:哪些|什么)/,
-  // 补充：有没有/是否存在类
-  /有没有.*(?:关于|相关|的).*(?:文档|资料)/,
-  /是否存在.*(?:相关|的).*(?:文档|资料)/,
-];
-
-/**
- * 语义查询正则模式（LLM 降级策略）
- * 迁移自 smartRouter.ts，补充 spec 分析中识别的高频遗漏模式
- */
-const SEMANTIC_PATTERNS = [
-  /.*是(?:什么|谁|多少)/,
-  /怎么(?:做|实现|配置|部署)/,
-  /如何/,
-  /为什么/,
-  /对比|比较|区别|差异/,
-  /总结|归纳|概括/,
-  /分析|评估/,
-  /建议|推荐/,
-  /.*(?:好不好|行不行|可不可以)/,
-  /.*的意思/,
-  /解释/,
-  // 补充：介绍一下/讲一下类
-  /(?:介绍|讲讲|说说|讲一下|说一下).*/,
-];
-
 export interface FallbackRouteResult {
-  route: RouteDecision;
   matchedEntries: string[];
   reason: string;
 }
 
 /**
- * 正则降级路由判断
- * 当 LLM routeDecision 不可用时，用正则匹配作为降级策略
+ * 正则降级路由：判断 query 是否匹配到实体词条
  *
  * @param query - 用户原始查询
  * @param matchedEntries - 已匹配的实体列表
- * @returns 路由决策结果
+ * @returns 匹配结果
  */
 export function fallbackRoute(query: string, matchedEntries: string[]): FallbackRouteResult {
-  // 无实体匹配时，走语义检索
-  if (matchedEntries.length === 0) {
-    // 检查是否为 index.md 元信息查询
-    // 注意：isIndexQuery 仍然在 indexLookup 中独立判断，这里不做重复
-    return {
-      route: 'semantic',
-      matchedEntries: [],
-      reason: '未匹配到任何已知概念/实体，降级为语义检索',
-    };
-  }
-
-  // 结构化模式优先检查
-  const isStructured = STRUCTURED_PATTERNS.some(p => p.test(query));
-  if (isStructured) {
-    return {
-      route: 'structured',
-      matchedEntries,
-      reason: `查询匹配结构化模式（文档列表/关联查询），匹配词条: [${matchedEntries.join(', ')}]`,
-    };
-  }
-
-  // 语义模式检查
-  const isSemantic = SEMANTIC_PATTERNS.some(p => p.test(query));
-  if (isSemantic) {
-    return {
-      route: 'semantic',
-      matchedEntries,
-      reason: '查询匹配语义分析模式（理解/解释/对比），降级为语义检索',
-    };
-  }
-
-  // 有实体但未命中任何模式 → 混合检索
   return {
-    route: 'hybrid',
     matchedEntries,
-    reason: `匹配到实体词条 [${matchedEntries.join(', ')}]，降级为混合检索（数据库+语义）`,
+    reason: matchedEntries.length > 0
+      ? `匹配到实体词条 [${matchedEntries.join(', ')}]`
+      : '未匹配到任何已知概念/实体',
   };
 }
 
@@ -492,6 +391,8 @@ export async function smartRewrite(
   method: 'llm' | 'fallback';
   /** LLM 路由决策（LLM 成功时有效，fallback 时为 null） */
   routeDecision: LlmRouteDecision | null;
+  /** LLM 推荐的文档类型过滤（仅 LLM 成功时有值） */
+  relevantDocTypes: string[];
 }> {
   // Step 1: 尝试 LLM 改写
   const llmResult = await rewriteQuery(query, options);
@@ -504,6 +405,7 @@ export async function smartRewrite(
       intent: withRoute.intent,
       method: 'llm',
       routeDecision: withRoute.routeDecision || null,
+      relevantDocTypes: withRoute.relevantDocTypes || [],
     };
   }
 
@@ -517,5 +419,6 @@ export async function smartRewrite(
     intent: 'other',
     method: 'fallback',
     routeDecision: null, // null 表示需要 chat/route.ts 自行用硬编码判断
+    relevantDocTypes: [],
   };
 }

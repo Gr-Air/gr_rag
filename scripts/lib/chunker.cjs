@@ -384,42 +384,12 @@ function chunkDocument(content, docId, docTitle, docPath, metadata, options) {
  * @param {string} content - 文件原始内容
  * @returns {{ id: string, docId: string, docTitle: string, docPath: string, chunkIndex: number, content: string, metadata: object, wikiLinks: string[], parentDocId: undefined }}
  */
-function buildWikiChunk(name, type, file, content) {
-  const sub = file.includes('/entity/') ? 'entity' : 'concept';
-  const freqMatch = content.match(/出现频次:\s*(\d+)/);
-  const freq = freqMatch ? parseInt(freqMatch[1]) : 0;
-
-  // 清洗内容：去除频次行，保留实际内容
-  let body = content.replace(/\r\n/g, '\n');
-  body = body.replace(/^出现频次:\s*\d+\s*$/m, '');
-  body = body.trim();
-  body = body.replace(/\n{3,}/g, '\n\n');
-
-  // 如果清洗后没有实质内容，降级为只保留标题和频次
-  const hasBody = body.length > 0 && body !== `# ${name}`;
-  const text = hasBody
-    ? `# ${name}\n${body}`
-    : `# ${name}\n${sub === 'concept' ? '概念' : '实体'} | 出现频次: ${freq}`;
-
-  return {
-    id: `wiki_${name}`,
-    docId: `wiki_${name}`,
-    docTitle: name,
-    docPath: file,
-    chunkIndex: 0,
-    content: text,
-    metadata: { client: '', project: '', docType: sub === 'concept' ? '概念' : '实体', date: '' },
-    wikiLinks: [name],
-    parentDocId: undefined,
-  };
-}
 
 module.exports = {
   extractWikiLinks,
   parseFilename,
   extractTitle,
   chunkDocument,
-  buildWikiChunk,
   // 导出表格感知辅助函数（供测试/调试）
   isTableLine,
   isTableBlock,

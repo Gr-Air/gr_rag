@@ -15,7 +15,6 @@ interface BuildOptions {
   isFollowUp?: boolean;
   intent?: string;
   entityDocsContent?: string;
-  structSummary?: string;
 }
 
 const REQUIRED_VARS: (keyof BuildOptions)[] = ['context', 'query'];
@@ -151,20 +150,14 @@ export class PromptTemplate {
     const templateName = this.selectTemplate(options);
     const template = this.templates.get(templateName)!;
 
-    // 构建上下文（包含实体文档和结构化摘要）
+    // 构建上下文（包含实体文档）
     let context = options.context;
 
     if (options.entityDocsContent) {
-      context = `## 实体关联文档全文\n\n${options.entityDocsContent}\n\n---\n\n${
-        options.structSummary
-          ? `## 结构化关联查询结果\n\n${options.structSummary}\n\n---\n\n`
-          : ''
-      }${context ? `## 语义检索文档内容\n\n${context}` : ''}`;
-    } else if (options.structSummary) {
-      context = `## 结构化关联查询结果\n\n${options.structSummary}\n\n---\n\n${context ? `## 语义检索文档内容\n\n${context}` : ''}`;
+      context = `## 实体关联文档全文\n\n${options.entityDocsContent}\n\n---\n\n${context ? `## 语义检索文档内容\n\n${context}` : ''}`;
     }
 
-    // 验证必填变量（在构建上下文之后，因为 entityDocsContent/structSummary 可以替代空的 context）
+    // 验证必填变量（在构建上下文之后，因为 entityDocsContent 可以替代空的 context）
     if (!context) {
       throw new Error(`必填变量缺失: context（无检索结果且无实体文档数据）`);
     }
@@ -178,7 +171,6 @@ export class PromptTemplate {
       query: options.query,
       conversationContext: options.conversationContext || '',
       entityDocs: options.entityDocsContent || '',
-      structSummary: options.structSummary || '',
     };
 
     let userPrompt = replaceVars(template.userPrompt, vars);

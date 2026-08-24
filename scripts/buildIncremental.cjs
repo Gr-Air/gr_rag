@@ -25,7 +25,7 @@ loadEnv();
 // 公共模块
 const { tokenizeAll } = require('./lib/tokenizer.cjs');
 const { getEmbeddingsBatch } = require('./lib/embedder.cjs');
-const { chunkDocument, buildWikiChunk, extractTitle, parseFilename } = require('./lib/chunker.cjs');
+const { chunkDocument, extractTitle, parseFilename } = require('./lib/chunker.cjs');
 const { scanAll } = require('./lib/scanner.cjs');
 const { fileHash, buildStateSnapshot } = require('./lib/hasher.cjs');
 const {
@@ -146,16 +146,6 @@ async function updateLanceDB(changes) {
 
       allIdsToDelete.push(docId);
       allNewChunks.push(...chunks);
-    } else {
-      // Wiki 词条：单个 chunk
-      const entry = changes.added.concat(changes.modified).find(
-        e => e.key === item.key && !e.key.startsWith('raw_')
-      );
-      const name = item.key.replace(/^wiki_/, '');
-      const type = item.file.includes('/entity/') ? 'entity' : 'concept';
-
-      allIdsToDelete.push(item.key);
-      allNewChunks.push(buildWikiChunk(name, type, item.file, item.content));
     }
   }
 

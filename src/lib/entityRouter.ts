@@ -108,7 +108,7 @@ export function extractEntityKeywords(query: string): string[] {
 
 const CHUNKS_META_DIR = path.join(process.cwd(), 'src', 'data', 'chunks_meta');
 
-function loadAllChunks(): Record<string, {
+export function loadAllChunks(): Record<string, {
   docId: string; docTitle: string; docPath: string;
   metadata: DocChunk['metadata']; content: string; wikiLinks: string[];
 }> {
@@ -204,7 +204,6 @@ async function entityRecallWithContext(
   topK: number
 ): Promise<SearchResult[]> {
   const allChunksData = loadAllChunks();
-  const wikiDir = path.join(process.cwd(), 'Wiki');
 
   const results: SearchResult[] = [];
   const seenChunkIds = new Set<string>();
@@ -213,47 +212,6 @@ async function entityRecallWithContext(
   for (const sr of structResults) {
     if (seenEntryNames.has(sr.entry.name)) continue;
     seenEntryNames.add(sr.entry.name);
-
-    if (sr.entry.type === 'concept' && sr.entry.path) {
-      const wikiFilePath = path.join(wikiDir, sr.entry.path);
-      if (fs.existsSync(wikiFilePath)) {
-        const wikiContent = fs.readFileSync(wikiFilePath, 'utf-8');
-        const context = extractEntityContext(wikiContent, matchedKeywords);
-
-        const chunk: DocChunk = {
-          id: `wiki_${sr.entry.name}`,
-          docId: `wiki_${sr.entry.name}`,
-          docTitle: sr.entry.name,
-          docPath: sr.entry.path,
-          chunkIndex: 0,
-          content: context,
-          metadata: {
-            docType: 'wiki',
-          },
-          wikiLinks: [],
-        };
-
-        let highlight = context.slice(0, 500);
-        for (const kw of matchedKeywords) {
-          try {
-            highlight = highlight.replace(
-              new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
-              `**${kw}**`
-            );
-          } catch { /* ignore regex errors */ }
-        }
-
-        results.push({
-          chunk,
-          score: (sr.entry.frequency + 100) / 500,
-          source: 'entity',
-          highlight,
-        });
-
-        if (results.length >= topK) break;
-        continue;
-      }
-    }
 
     for (const structChunk of sr.chunks) {
       const chunkId = structChunk.chunk_id;
@@ -425,8 +383,6 @@ export interface RoutedSearchResult {
   method: 'rrf' | 'entity';
   /** 匹配到的实体关键字（entity 方法时） */
   matchedKeywords?: string[];
-  /** 结构化查询结果摘要 */
-  structSummary?: string;
 }
 
 /**
@@ -457,11 +413,10 @@ export async function routedSearch(
     console.log(`[EntityRouter] 匹配到实体关键字: [${matched.join(', ')}]，使用结构化检索`);
 
     try {
-      const { isStructDbReady, executeStructuredQuery, formatStructResults } = await import('./structSearchEngine');
+      const { isStructDbReady, executeStructuredQuery } = await import('./structSearchEngine');
 
       if (isStructDbReady()) {
         const structResults = await executeStructuredQuery(matched, 'or');
-        const structSummary = formatStructResults(structResults);
 
         const entityResults = await entityRecallWithContext(matched, structResults, topK);
 
@@ -470,7 +425,6 @@ export async function routedSearch(
             results: entityResults,
             method: 'entity',
             matchedKeywords: matched,
-            structSummary,
           };
         }
       }
@@ -521,11 +475,10 @@ async function forceSearch(
 
   if (method === 'entity' && matched.length > 0) {
     try {
-      const { isStructDbReady, executeStructuredQuery, formatStructResults } = await import('./structSearchEngine');
+      const { isStructDbReady, executeStructuredQuery } = await import('./structSearchEngine');
 
       if (isStructDbReady()) {
         const structResults = await executeStructuredQuery(matched, 'or');
-        const structSummary = formatStructResults(structResults);
 
         const entityResults = await entityRecallWithContext(matched, structResults, topK);
 
@@ -534,7 +487,6 @@ async function forceSearch(
             results: entityResults,
             method: 'entity',
             matchedKeywords: matched,
-            structSummary,
           };
         }
       }

@@ -17,7 +17,7 @@ loadEnv();
 // 公共模块
 const { tokenizeAll } = require('./lib/tokenizer.cjs');
 const { getEmbeddingsBatch } = require('./lib/embedder.cjs');
-const { chunkDocument, buildWikiChunk, extractTitle, parseFilename } = require('./lib/chunker.cjs');
+const { chunkDocument, extractTitle, parseFilename } = require('./lib/chunker.cjs');
 const { scanAll } = require('./lib/scanner.cjs');
 const { buildStateSnapshot } = require('./lib/hasher.cjs');
 const {

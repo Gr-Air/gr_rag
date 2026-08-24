@@ -8,13 +8,15 @@ from pathlib import Path
 from typing import Any
 from datetime import datetime
 
+import asyncio
 import requests
 from datasets import Dataset
 from dotenv import load_dotenv
 from ragas import evaluate
-from ragas.metrics import Faithfulness, AnswerRelevancy, ContextPrecision, ContextRecall
-from ragas.callbacks import ChainRun, MetricTrace
+from ragas.metrics import Faithfulness, AnswerRelevancy, ContextPrecision, ContextRecall, AnswerCorrectness, AspectCritic
 from dashscope import TextEmbedding
+from ragas.embeddings.base import BaseRagasEmbeddings
+from ragas.run_config import RunConfig
 
 # 加载项目根目录的 .env 文件（本脚本在 test/rag-eval/ 下，向上两级到项目根目录）
 ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
@@ -25,82 +27,18 @@ else:
     print(f"警告: .env 文件不存在 ({ENV_PATH})，将仅使用命令行参数")
 
 
-def _patch_ragas_parse_run_traces():
-    """
-    修复 ragas 0.2.8 的 bug: 当 LLM 调用失败时，
-    parse_run_traces 在 callbacks.py:167 执行 output[0] 会因为空 dict 而 KeyError: 0。
-    这里用安全的版本替换原函数。
-    """
-    def fixed_parse_run_traces(
-        traces: dict[str, ChainRun],
-        parent_run_id: str | None = None,
-    ) -> list[dict[str, Any]]:
-        root_traces = [
-            chain_trace
-            for chain_trace in traces.values()
-            if chain_trace.parent_run_id == parent_run_id
-        ]
-        if len(root_traces) > 1:
-            raise ValueError(
-                "Multiple root traces found! This is a bug on our end, "
-                "please file an issue and we will fix it ASAP :)"
-            )
-        root_trace = root_traces[0]
-
-        parased_traces = []
-        for row_uuid in root_trace.children:
-            row_trace = traces[row_uuid]
-            metric_traces = MetricTrace()
-            for metric_uuid in row_trace.children:
-                metric_trace = traces[metric_uuid]
-                metric_traces.scores[metric_trace.name] = metric_trace.outputs.get(
-                    "output", {}
-                )
-                prompt_traces = {}
-                for prompt_uuid in metric_trace.children:
-                    prompt_trace = traces[prompt_uuid]
-                    # ---- FIX: 安全获取 output，兼容 LLM 调用失败的场景 ----
-                    output_val = prompt_trace.outputs.get("output", {})
-                    if isinstance(output_val, dict):
-                        if 0 in output_val:
-                            output_val = output_val[0]
-                        else:
-                            # LLM 调用失败时 output 为空 dict
-                            output_val = ""
-                    else:
-                        output_val = str(output_val)
-                    # ---- FIX END ----
-                    prompt_traces[f"{prompt_trace.name}"] = {
-                        "input": prompt_trace.inputs.get("data", {}),
-                        "output": output_val,
-                    }
-                metric_traces[f"{metric_trace.name}"] = prompt_traces
-            parased_traces.append(metric_traces)
-
-        return parased_traces
-
-    # 替换 ragas.callbacks 模块中的函数
-    import ragas.callbacks
-    import ragas.dataset_schema
-    ragas.callbacks.parse_run_traces = fixed_parse_run_traces  # type: ignore[assignment]
-    ragas.dataset_schema.parse_run_traces = fixed_parse_run_traces  # type: ignore[assignment]
-
-
-# 在导入 ragas 相关模块后立即应用补丁
-_patch_ragas_parse_run_traces()
-
-# 设置默认环境变量供 langchain-openai 使用
-# 这些值会在 main() 中被实际的 API key 覆盖
-os.environ.setdefault("OPENAI_API_KEY", "placeholder")
-os.environ.setdefault("OPENAI_BASE_URL", "https://api.xiaomimimo.com/v1")
-
 RAG_API_URL = "http://localhost:3000/api/eval"
 TEST_SET_PATH = os.path.join(os.path.dirname(__file__), "test_set.json")
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "results")
 
-DEFAULT_MIMO_URL = "https://api.xiaomimimo.com/v1"
-DEFAULT_MODEL = "mimo-v2.5"
+DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DEFAULT_MODEL = "qwen-plus"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-v4"
+
+# 设置默认环境变量供 langchain-openai 使用
+# 这些值会在 main() 中被实际的 API key 覆盖
+os.environ.setdefault("OPENAI_API_KEY", "placeholder")
+os.environ.setdefault("OPENAI_BASE_URL", DEFAULT_BASE_URL)
 
 
 def is_table_line(line: str) -> bool:
@@ -221,9 +159,13 @@ def call_rag_api(query: str, api_key: str | None = None, base_url: str | None = 
 
     for attempt in range(max_retries):
         try:
+            t0 = time.time()
             response = requests.post(RAG_API_URL, json=payload, timeout=300)
+            latency_ms = (time.time() - t0) * 1000
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            result["latency_ms"] = latency_ms
+            return result
         except requests.exceptions.RequestException as e:
             print(f"API 请求失败 (尝试 {attempt+1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
@@ -238,6 +180,23 @@ def call_rag_api(query: str, api_key: str | None = None, base_url: str | None = 
         "numResults": 0,
         "matchedEntities": [],
         "error": f"API 请求失败，已重试 {max_retries} 次",
+        "latency_ms": 0,
+    }
+
+
+def compute_latency_stats(latencies: list[float]) -> dict[str, float]:
+    """计算延迟统计：P50 / P95 / P99 / Max / Avg"""
+    if not latencies:
+        return {}
+    sorted_lat = sorted(latencies)
+    n = len(sorted_lat)
+    return {
+        "avg_ms": sum(sorted_lat) / n,
+        "p50_ms": sorted_lat[int(n * 0.5)],
+        "p95_ms": sorted_lat[min(int(n * 0.95), n - 1)],
+        "p99_ms": sorted_lat[min(int(n * 0.99), n - 1)],
+        "max_ms": sorted_lat[-1],
+        "min_ms": sorted_lat[0],
     }
 
 
@@ -263,11 +222,15 @@ def build_ragas_dataset(test_results: list[dict[str, Any]]) -> Dataset:
     })
 
 
-class DashScopeEmbeddings:
+class DashScopeEmbeddings(BaseRagasEmbeddings):
     def __init__(self, api_key: str, model: str = DEFAULT_EMBEDDING_MODEL):
         self.api_key = api_key
         self.model = model
         self.dimensions = 1024
+        self.run_config = RunConfig()
+
+    def set_run_config(self, run_config: RunConfig):
+        self.run_config = run_config
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         embeddings = []
@@ -290,6 +253,20 @@ class DashScopeEmbeddings:
         )
         return response.output['embeddings'][0]['embedding']
 
+    async def embed_text(self, text: str, is_async: bool = True) -> list[float]:
+        """RAGAS 使用的 embed_text 方法"""
+        return self.embed_query(text)
+
+    async def embed_texts(self, texts: list[str], is_async: bool = True) -> list[list[float]]:
+        """RAGAS 使用的 embed_texts 方法"""
+        return self.embed_documents(texts)
+
+    async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
+        return self.embed_documents(texts)
+
+    async def aembed_query(self, text: str) -> list[float]:
+        return self.embed_query(text)
+
 
 def evaluate_with_ragas(dataset: Dataset, openai_api_key: str, openai_base_url: str | None = None, model_name: str | None = None, dashscope_api_key: str | None = None):
     if len(dataset) == 0:
@@ -298,7 +275,7 @@ def evaluate_with_ragas(dataset: Dataset, openai_api_key: str, openai_base_url: 
 
     # 设置环境变量供 langchain-openai 使用
     os.environ["OPENAI_API_KEY"] = openai_api_key
-    os.environ["OPENAI_API_BASE"] = openai_base_url or DEFAULT_MIMO_URL
+    os.environ["OPENAI_API_BASE"] = openai_base_url or DEFAULT_BASE_URL
 
     # ragas 0.2.8 的 llm_factory 不传 openai_api_key，需要手动创建 ChatOpenAI
     from langchain_openai import ChatOpenAI
@@ -306,10 +283,10 @@ def evaluate_with_ragas(dataset: Dataset, openai_api_key: str, openai_base_url: 
 
     openai_model = ChatOpenAI(
         model=model_name or DEFAULT_MODEL,
-        base_url=openai_base_url or DEFAULT_MIMO_URL,
+        base_url=openai_base_url or DEFAULT_BASE_URL,
         timeout=60,
     )
-    mimo_llm = LangchainLLMWrapper(openai_model)
+    eval_llm = LangchainLLMWrapper(openai_model)
     embeddings = DashScopeEmbeddings(dashscope_api_key or openai_api_key, DEFAULT_EMBEDDING_MODEL)
 
     # ---- 预检：测试 LLM 连接 ----
@@ -320,7 +297,7 @@ def evaluate_with_ragas(dataset: Dataset, openai_api_key: str, openai_base_url: 
     except Exception as e:
         print(f"  ❌ LLM 连接失败: {e}")
         print("  请检查 API Key 和 Base URL 是否正确")
-        print(f"  当前 Base URL: {openai_base_url or DEFAULT_MIMO_URL}")
+        print(f"  当前 Base URL: {openai_base_url or DEFAULT_BASE_URL}")
         print(f"  当前 Model: {model_name or DEFAULT_MODEL}")
         print("  跳过 RAGAS 评估，LLM 不可用")
         return {}, {}
@@ -331,7 +308,7 @@ def evaluate_with_ragas(dataset: Dataset, openai_api_key: str, openai_base_url: 
 
     try:
         print("\n[1/4] 评估 Faithfulness...")
-        fa = Faithfulness(llm=mimo_llm)
+        fa = Faithfulness(llm=eval_llm)
         fa_result = evaluate(dataset, metrics=[fa])
         fa_df = fa_result.to_pandas()
         results["faithfulness"] = float(fa_df["faithfulness"].mean())
@@ -343,7 +320,7 @@ def evaluate_with_ragas(dataset: Dataset, openai_api_key: str, openai_base_url: 
 
     try:
         print("\n[2/4] 评估 Context Recall...")
-        cr = ContextRecall(llm=mimo_llm)
+        cr = ContextRecall(llm=eval_llm)
         cr_result = evaluate(dataset, metrics=[cr])
         cr_df = cr_result.to_pandas()
         results["context_recall"] = float(cr_df["context_recall"].mean())
@@ -355,7 +332,7 @@ def evaluate_with_ragas(dataset: Dataset, openai_api_key: str, openai_base_url: 
 
     try:
         print("\n[3/4] 评估 Context Precision...")
-        cp = ContextPrecision(llm=mimo_llm)
+        cp = ContextPrecision(llm=eval_llm)
         cp_result = evaluate(dataset, metrics=[cp])
         cp_df = cp_result.to_pandas()
         results["context_precision"] = float(cp_df["context_precision"].mean())
@@ -367,7 +344,7 @@ def evaluate_with_ragas(dataset: Dataset, openai_api_key: str, openai_base_url: 
 
     try:
         print("\n[4/4] 评估 Answer Relevancy...")
-        ar = AnswerRelevancy(llm=mimo_llm, embeddings=embeddings)
+        ar = AnswerRelevancy(llm=eval_llm, embeddings=embeddings)
         ar_result = evaluate(dataset, metrics=[ar])
         ar_df = ar_result.to_pandas()
         results["answer_relevancy"] = float(ar_df["answer_relevancy"].mean())
@@ -377,10 +354,50 @@ def evaluate_with_ragas(dataset: Dataset, openai_api_key: str, openai_base_url: 
         print(f"  Answer Relevancy 评估失败: {e}")
         results["answer_relevancy"] = float('nan')
 
+    try:
+        print("\n[5/6] 评估 Answer Correctness...")
+        ac = AnswerCorrectness(llm=eval_llm, embeddings=embeddings)
+        ac_result = evaluate(dataset, metrics=[ac])
+        ac_df = ac_result.to_pandas()
+        results["answer_correctness"] = float(ac_df["answer_correctness"].mean())
+        detailed_results["answer_correctness"] = ac_df["answer_correctness"].tolist()
+        print(f"  Answer Correctness: {results['answer_correctness']:.4f}")
+    except Exception as e:
+        print(f"  Answer Correctness 评估失败: {e}")
+        results["answer_correctness"] = float('nan')
+
+    try:
+        print("\n[6/6] 评估 AspectCritic（简洁性 + 引用来源）...")
+        conciseness = AspectCritic(
+            name="conciseness",
+            definition="answer is concise and to the point, without unnecessary verbosity or repetition",
+            llm=eval_llm,
+        )
+        citation = AspectCritic(
+            name="source_citation",
+            definition="answer provides specific source references (document titles, project names) when making claims",
+            llm=eval_llm,
+        )
+        conc_result = evaluate(dataset, metrics=[conciseness])
+        conc_df = conc_result.to_pandas()
+        results["conciseness"] = float(conc_df["conciseness"].mean())
+        detailed_results["conciseness"] = conc_df["conciseness"].tolist()
+
+        cit_result = evaluate(dataset, metrics=[citation])
+        cit_df = cit_result.to_pandas()
+        results["source_citation"] = float(cit_df["source_citation"].mean())
+        detailed_results["source_citation"] = cit_df["source_citation"].tolist()
+        print(f"  Conciseness: {results['conciseness']:.4f}")
+        print(f"  Source Citation: {results['source_citation']:.4f}")
+    except Exception as e:
+        print(f"  AspectCritic 评估失败: {e}")
+        results["conciseness"] = float('nan')
+        results["source_citation"] = float('nan')
+
     return results, detailed_results
 
 
-def generate_report(results: dict[str, float], detailed_results: dict[str, list], test_results: list[dict[str, Any]], duration: float, table_truncation: dict | None = None):
+def generate_report(results: dict[str, float], detailed_results: dict[str, list], test_results: list[dict[str, Any]], duration: float, table_truncation: dict | None = None, latency_stats: dict | None = None):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -402,6 +419,7 @@ def generate_report(results: dict[str, float], detailed_results: dict[str, list]
         "valid_samples": len(valid_results),
         "invalid_samples": len(invalid_results),
         "metrics": results,
+        "latency_stats": latency_stats,
         "table_truncation": table_truncation,
         "detailed_results": test_results,
     }
@@ -426,6 +444,9 @@ def generate_report(results: dict[str, float], detailed_results: dict[str, list]
             "context_recall": "上下文包含真实答案的程度",
             "context_precision": "上下文的精确性",
             "answer_relevancy": "回答与问题的相关性",
+            "answer_correctness": "回答的事实正确性（结合忠实度与语义相似度）",
+            "conciseness": "回答是否简洁精炼，无冗余重复",
+            "source_citation": "回答是否提供具体的文档来源引用",
         }
         
         for metric, desc in metrics_desc.items():
@@ -434,6 +455,20 @@ def generate_report(results: dict[str, float], detailed_results: dict[str, list]
                 f.write(f"| {metric} | nan | {desc} |\n")
             else:
                 f.write(f"| {metric} | {score:.4f} | {desc} |\n")
+        f.write("\n")
+
+        f.write("## 延迟统计\n\n")
+        if latency_stats:
+            f.write("| 指标 | 值 (ms) |\n")
+            f.write("|------|--------|\n")
+            f.write(f"| Avg | {latency_stats['avg_ms']:.0f} |\n")
+            f.write(f"| P50 | {latency_stats['p50_ms']:.0f} |\n")
+            f.write(f"| P95 | {latency_stats['p95_ms']:.0f} |\n")
+            f.write(f"| P99 | {latency_stats['p99_ms']:.0f} |\n")
+            f.write(f"| Max | {latency_stats['max_ms']:.0f} |\n")
+            f.write(f"| Min | {latency_stats['min_ms']:.0f} |\n")
+        else:
+            f.write("无延迟数据\n")
         f.write("\n")
 
         f.write("## 表格截断分析\n\n")
@@ -466,7 +501,7 @@ def generate_report(results: dict[str, float], detailed_results: dict[str, list]
             if result.get("error"):
                 f.write(f"- **错误**: {result['error']}\n")
             else:
-                for metric in ["faithfulness", "context_recall", "context_precision", "answer_relevancy"]:
+                for metric in ["faithfulness", "context_recall", "context_precision", "answer_relevancy", "answer_correctness", "conciseness", "source_citation"]:
                     if metric in result:
                         val = result[metric]
                         if val == val:
@@ -479,8 +514,8 @@ def generate_report(results: dict[str, float], detailed_results: dict[str, list]
 
 def main():
     parser = argparse.ArgumentParser(description="RAG 离线批量评估脚本")
-    parser.add_argument("--api-key", default=os.getenv("OPENAI_API_KEY"), help="MiMo API Key (默认从 .env 的 OPENAI_API_KEY 读取)")
-    parser.add_argument("--base-url", default=os.getenv("OPENAI_BASE_URL", DEFAULT_MIMO_URL), help=f"MiMo Base URL (默认: {os.getenv('OPENAI_BASE_URL', DEFAULT_MIMO_URL)})")
+    parser.add_argument("--api-key", default=os.getenv("OPENAI_API_KEY"), help="LLM API Key (默认从 .env 的 OPENAI_API_KEY 读取)")
+    parser.add_argument("--base-url", default=os.getenv("OPENAI_BASE_URL", DEFAULT_BASE_URL), help=f"LLM Base URL (默认: {os.getenv('OPENAI_BASE_URL', DEFAULT_BASE_URL)})")
     parser.add_argument("--model", default=os.getenv("LLM_MODEL", DEFAULT_MODEL), help=f"LLM 模型名称 (默认: {os.getenv('LLM_MODEL', DEFAULT_MODEL)})")
     parser.add_argument("--test-set", default=TEST_SET_PATH, help="测试集路径")
     parser.add_argument("--dashscope-api-key", default=os.getenv("DASHSCOPE_API_KEY"), help="DashScope API Key (默认从 .env 的 DASHSCOPE_API_KEY 读取)")
@@ -524,6 +559,7 @@ def main():
         if i <= 5:
             print(f"\n  检索方法: {api_result.get('searchMethod', 'unknown')}")
             print(f"  命中实体: {api_result.get('matchedEntities', [])}")
+            print(f"  延迟: {api_result.get('latency_ms', 0):.0f}ms")
 
         time.sleep(1)
 
@@ -532,6 +568,17 @@ def main():
 
     valid_count = sum(1 for r in test_results if not r.get("error") and r.get("answer"))
     print(f"有效样本数: {valid_count}/{len(test_results)}")
+
+    # 延迟统计
+    latencies = [r.get("latency_ms", 0) for r in test_results if not r.get("error") and r.get("latency_ms", 0) > 0]
+    latency_stats = compute_latency_stats(latencies) if latencies else {}
+    if latency_stats:
+        print(f"\n延迟统计 (ms):")
+        print(f"  Avg: {latency_stats['avg_ms']:.0f}")
+        print(f"  P50: {latency_stats['p50_ms']:.0f}")
+        print(f"  P95: {latency_stats['p95_ms']:.0f}")
+        print(f"  P99: {latency_stats['p99_ms']:.0f}")
+        print(f"  Max: {latency_stats['max_ms']:.0f}")
 
     print("\n构建 RAGAS 数据集...")
     dataset = build_ragas_dataset(test_results)
@@ -569,7 +616,7 @@ def main():
     print(f"  样本级表格截断率: {table_truncation['truncation_rate_samples']:.2%}")
 
     print("\n生成评估报告...")
-    generate_report(ragas_results, detailed_results, test_results, duration, table_truncation)
+    generate_report(ragas_results, detailed_results, test_results, duration, table_truncation, latency_stats)
 
 
 if __name__ == "__main__":

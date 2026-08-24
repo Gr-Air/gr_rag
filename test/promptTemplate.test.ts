@@ -85,16 +85,10 @@ describe('PromptTemplate', () => {
       const result = template.build({
         context: '文档上下文',
         query: '用户问题',
-        structSummary: '结构化摘要',
       });
 
       expect(result.userPrompt).toContain('文档上下文');
       expect(result.userPrompt).toContain('用户问题');
-      // structSummary 应该出现在上下文中
-      expect(
-        result.systemPrompt.includes('结构化关联查询结果') ||
-        result.userPrompt.includes('结构化摘要')
-      ).toBe(true);
     });
 
     it('基础模板应该注入对话历史', () => {

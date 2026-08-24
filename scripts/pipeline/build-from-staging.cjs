@@ -85,6 +85,12 @@ async function main() {
   const allChunks = readStaging();
   console.log(`  ✅ 读取 ${allChunks.length} 个 chunk`);
 
+  // 过滤 wiki 概念/实体短词条：它们已在 SQLite struct DB 中用于实体查询，
+  // 不再参与向量/BM25 语义检索（短词条 avg 32 tokens，稀释搜索结果）
+  const indexChunks = allChunks.filter(c => !c.docId?.startsWith('wiki_'));
+  const wikiCount = allChunks.length - indexChunks.length;
+  console.log(`  过滤 wiki 短词条: ${wikiCount} 个，保留 ${indexChunks.length} 个 Raw 文档 chunk`);
+
   // 按 docId 分组，用于构建 parents
   const docMap = new Map();
   for (const chunk of allChunks) {
@@ -117,11 +123,11 @@ async function main() {
       process.exit(1);
     }
 
-    // 准备文本：优先用 summary（更精炼），降级到 content
-    // summary 通常 100-200 字，比原始 content（200-1000 字）更聚焦
-    const vecTexts = allChunks.map(c => {
-      const text = c.summary || c.content;
-      return text.slice(0, 2000);
+    // 准备文本：使用原始 chunk.content 做 embedding
+    // 注意：曾尝试用 chunk.summary 提升语义匹配，但评测显示摘要丢失
+    // 了具体术语（人名、日期、技术名词等），导致向量检索召回率暴跌
+    const vecTexts = indexChunks.map(c => {
+      return (c.content || '').slice(0, 2000);
     });
     console.log(`  共 ${vecTexts.length} 条文本待向量化，维度: ${DIM}`);
 
@@ -142,7 +148,7 @@ async function main() {
     console.log('  LanceDB 已连接');
 
     // 准备表数据
-    const tableData = allChunks.map((chunk, i) => ({
+    const tableData = indexChunks.map((chunk, i) => ({
       id: chunk.id,
       docId: chunk.docId,
       docTitle: chunk.docTitle || '',
@@ -166,7 +172,7 @@ async function main() {
 
     // 创建 IVF_PQ 向量索引
     try {
-      const numPartitions = Math.min(Math.max(Math.floor(allChunks.length / 20), 4), 256);
+      const numPartitions = Math.min(Math.max(Math.floor(indexChunks.length / 20), 4), 256);
       console.log(`  创建 IVF_PQ 向量索引 (num_partitions=${numPartitions})...`);
       await table.createIndex('vector', {
         config: lancedb.Index.ivfPq({
@@ -183,7 +189,7 @@ async function main() {
     }
 
     // 向量索引配置
-    writeVectorConfig(allChunks.length, DIM);
+    writeVectorConfig(indexChunks.length, DIM);
     logMem('after lanceDB');
   }
 
@@ -196,8 +202,8 @@ async function main() {
     const invIndex = new Map();
     const docLengths = {};
 
-    for (let i = 0; i < allChunks.length; i++) {
-      const c = allChunks[i];
+    for (let i = 0; i < indexChunks.length; i++) {
+      const c = indexChunks[i];
       const tokens = tokenizeAllFiltered(c.content);
       docLengths[c.id] = tokens.length;
 
@@ -208,7 +214,7 @@ async function main() {
         invIndex.get(term).push({ chunkId: c.id, tf });
       }
       if ((i + 1) % 500 === 0) {
-        console.log(`  已索引 ${i + 1}/${allChunks.length}, ${invIndex.size} 词项`);
+        console.log(`  已索引 ${i + 1}/${indexChunks.length}, ${invIndex.size} 词项`);
         logMem(`bm25 ${i + 1}`);
       }
     }
@@ -269,7 +275,7 @@ async function main() {
   console.log('\n========================================');
   console.log('  ✅ Stage 2 索引构建完成!');
   console.log('========================================');
-  console.log(`  总 chunk 数: ${allChunks.length}`);
+  console.log(`  总 chunk 数: ${indexChunks.length} (向量+BM25) / ${allChunks.length} (含wiki元数据)`);
   console.log(`  文档数: ${docMap.size}`);
   if (!opts.skipVectors) {
     console.log(`  向量维度: ${DIM}`);

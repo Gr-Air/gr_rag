@@ -199,7 +199,7 @@ async function extractEntitiesWithLLM(allChunks, existingEntries, opts = {}) {
       } else {
         failed++;
       }
-      process.stdout.write(`\r  LLM 提取进度: ${completed}/${allChunkEntries.length} (成功: ${succeeded}, 失败: ${failed})`);
+      process.stdout.write(`\r  LLM 提取进度: ${completed}/${Object.keys(allChunks).length} (成功: ${succeeded}, 失败: ${failed})`);
     }
   }
   console.log('');

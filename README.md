@@ -7,7 +7,7 @@
 ```
 用户查询
     │
-    ├── ① LLM 智能改写 ──── 查询改写 + 实体提取
+    ├── ① LLM 智能改写 ──── 查询改写 + 实体提取 + docType 推荐
     │                      (不可用时降级 jieba + 字典匹配)
     │                              ↓
     │              ┌───────────────┴───────────────┐
@@ -15,7 +15,7 @@
     │       有实体匹配                     无实体匹配
     │              ↓                               ↓
     │   ② 实体文档加载                ② RRF 混合检索
-    │   (SQLite AND-first             (向量+BM25, 1036 chunk)
+    │   (SQLite AND-first             (向量+BM25, docType 过滤)
     │    精准匹配)                          ↓
     │              ↓                  top20 + top20 → RRF(k=60)
     │   短文档全文 / 长文档                      ↓
@@ -36,13 +36,14 @@
 
 ### ① LLM 智能改写层（Query Rewriter）
 
-**目标**：一次 LLM 调用同时完成查询改写和实体提取。
+**目标**：一次 LLM 调用同时完成查询改写、实体提取和文档类型推荐。
 
 调用 `qwen3.7-max` 对用户查询进行：
 
 - **查询改写**：补全隐含实体、术语标准化、同义词展开
 - **实体提取**：从 SQLite 加载 3700+ 实体词条作为参考，精准提取（支持实体分解——未知实体拆解为已知实体组合）
 - **追问检测**：识别指代消解、省略追问、纠错否定等
+- **文档类型推荐**：输出 `relevantDocTypes`，用于无实体命中时缩小 hybridSearch 检索范围
 
 LLM 不可用时降级为 jieba 分词 + 字典匹配。
 
@@ -57,6 +58,8 @@ LLM 不可用时降级为 jieba 分词 + 字典匹配。
 4. 同时加载 Wiki 词条内容作为补充上下文
 
 ### ② RRF 混合检索（Hybrid Search）
+
+当实体匹配和索引查询均无结果时，降级为混合检索。LLM 推荐的 `relevantDocTypes` 用于 post-filter 收窄检索范围。
 
 双路并行召回，结果通过 **RRF（Reciprocal Rank Fusion）** 融合：
 
@@ -75,7 +78,7 @@ RRF(d) = Σ 1/(k + rank_i(d))，k = 60
 
 ### ③ Rerank 语义重排序
 
-对 RRF 融合结果进行语义相关性精排，取 top5 进入 LLM prompt。chunk 采用语义分块（P50: 355 tokens），每个 chunk 已包含完整段落或表格，无需额外上下文扩展。
+对 RRF 融合结果进行语义相关性精排，取 top5 进入 LLM prompt。chunk 采用字符级语义分块（上限 1000 字符，表格作为整体保留），每个 chunk 已包含完整段落或表格，无需额外上下文扩展。
 
 ### ④ RAG 生成层（RAG Engine）
 
@@ -94,7 +97,7 @@ RRF(d) = Σ 1/(k + rank_i(d))，k = 60
 | 路径 | 触发条件 | 数据源 | 特点 |
 |------|---------|---------|------|
 | entity | 查询匹配到实体词条 | SQLite struct_kb.db → Raw 全文/片段 | 精确匹配，全量注入 |
-| rrf | 无实体命中 | LanceDB(1036) + BM25(1036) → Rerank top5 | 语义理解，覆盖面广 |
+| rrf | 无实体命中 | LanceDB(1036) + BM25(1036) → docType 过滤 → Rerank top5 | 语义理解，docType 收窄范围 |
 
 ### 表格感知分块
 
@@ -117,9 +120,9 @@ RRF(d) = Σ 1/(k + rank_i(d))，k = 60
 | LanceDB | 文档块向量（1024维，1036 chunk） | 向量检索 |
 | BM25 倒排索引 | 分词后的词项→文档映射（1036 chunk） | BM25 检索 |
 | SQLite `struct_kb.db` | 实体/概念 → chunk 关联（3729 词条，32951 关联边） | 实体查询 |
-| chunks_meta | 文档块元数据（4889 条，含 wiki 词条） | 上下文提取 |
+| chunks_meta | 文档块元数据（1036 条，仅 Raw 文档） | 上下文提取 |
 
-**Wiki 文档特殊处理**：`Wiki/concept/` 和 `Wiki/entity/` 目录下的 3853 个词条不参与向量/BM25 语义索引，只存储在 SQLite 数据库中作为词条定义，检索时通过实体文档加载机制注入全文。
+**Wiki 文档特殊处理**：`Wiki/concept/` 和 `Wiki/entity/` 目录下的 3853 个词条不再生成 chunk，Wiki 词条内容通过文件系统直接加载（`entityRouter.ts` 的 `fs.readFileSync`），用于实体文档增强。
 
 ---
 
@@ -168,18 +171,21 @@ python evaluate.py          # 自动加载项目 .env 中的 API Key
 
 评测流程：
 1. 调用 `/api/eval` 端点对测试集样本进行检索+生成
-2. 对返回结果计算 RAGAS 四项指标（Faithfulness、Context Recall、Context Precision、Answer Relevancy）
+2. 对返回结果计算 RAGAS 七项指标（Faithfulness、Context Recall、Context Precision、Answer Relevancy、Answer Correctness、Conciseness、Source Citation）
 3. 诊断表格截断情况
 4. 输出 JSON 详细报告 + Markdown 摘要
 
-最新评测结果（20 样本，qwen3.7-max）：
+最新评测结果（20 样本，qwen3.7-max，2026-08-20）：
 
 | 指标 | 分数 | 说明 |
 |------|------|------|
-| Faithfulness | 0.95 | 回答忠实于上下文的程度 |
-| Context Recall | 0.67 | 上下文包含真实答案的程度 |
-| Context Precision | 0.86 | 上下文的精确性 |
-| Answer Relevancy | 0.83 | 回答与问题的相关性 |
+| Faithfulness | 0.94 | 回答忠实于上下文的程度 |
+| Context Recall | 0.64 | 上下文包含真实答案的程度 |
+| Context Precision | 0.75 | 上下文的精确性 |
+| Answer Relevancy | 0.89 | 回答与问题的相关性 |
+| Answer Correctness | 0.57 | 回答的事实正确性（结合忠实度与语义相似度） |
+| Conciseness | 0.65 | 回答是否简洁精炼，无冗余重复 |
+| Source Citation | 1.00 | 回答是否提供具体的文档来源引用 |
 
 ---
 
@@ -212,14 +218,26 @@ llm-wiki/
 │   ├── pipeline/                # 流水线脚本
 │   │   ├── clean-and-chunk.cjs  #   Stage 1: 文档清洗 + 表格感知分块
 │   │   ├── summarize-chunks.cjs #   Stage 1.5: LLM chunk 摘要生成
-│   │   └── build-from-staging.cjs # Stage 2: 向量化 + BM25 + SQLite
+│   │   ├── build-from-staging.cjs # Stage 2: 向量化 + BM25 + SQLite
+│   │   ├── extract-entities.cjs #   实体提取
+│   │   ├── link-entities.cjs    #   实体链接
+│   │   ├── augment-concepts.cjs #   概念词条增强
+│   │   ├── inspect-chunks.cjs   #   分块结果检查
+│   │   └── gen-test-docs.cjs    #   生成测试文档
 │   ├── lib/                     # 流水线公共模块
 │   │   ├── chunker.cjs          #   表格感知语义分块器
 │   │   ├── cleaner.cjs          #   文档清洗器
+│   │   ├── embedder.cjs         #   DashScope 向量化
+│   │   ├── entityExtractor.cjs  #   实体提取器
+│   │   ├── envLoader.cjs        #   环境变量加载
+│   │   ├── hasher.cjs           #   内容哈希（增量判断）
+│   │   ├── indexWriter.cjs      #   索引写入器
+│   │   ├── linker.cjs           #   实体链接
 │   │   ├── scanner.cjs          #   文件扫描器
 │   │   ├── staging.cjs          #   中间存储管理
-│   │   ├── entityExtractor.cjs  #   实体提取器
-│   │   └── summarizer.cjs       #   LLM 摘要模块
+│   │   ├── summarizer.cjs       #   LLM 摘要模块
+│   │   ├── tokenizer.cjs        #   分词器（jieba + 业务词典）
+│   │   └── wikiWriter.cjs       #   Wiki 词条写入
 │   ├── buildIndex.cjs           # 全量索引构建
 │   ├── buildIncremental.cjs     # 增量索引构建
 │   └── buildStructDb.cjs        # 结构化数据库构建
@@ -227,6 +245,8 @@ llm-wiki/
 │   ├── app/
 │   │   ├── page.tsx             # 首页仪表盘
 │   │   ├── chat/page.tsx        # AI 问答页（多轮对话 + 流式输出）
+│   │   ├── docs/page.tsx        # 文档浏览页
+│   │   ├── search/page.tsx      # 检索页
 │   │   └── api/
 │   │       ├── chat/route.ts    # RAG 问答 API (SSE)
 │   │       ├── search/route.ts  # 混合检索 API
@@ -250,7 +270,6 @@ llm-wiki/
 │   │   ├── ragCache.ts          # 查询结果缓存
 │   │   ├── parser.ts            # Markdown 文档解析器（语义分块）
 │   │   ├── indexManager.ts      # 索引管理器
-│   │   ├── indexLookup.ts       # Index.md 元信息查询
 │   │   └── sessionManager.ts    # 多轮对话会话管理
 │   └── data/                    # 预构建索引数据（git 追踪）
 │       ├── lancedb/             # LanceDB 向量数据库
@@ -283,5 +302,5 @@ llm-wiki/
 - **LLM**: OpenAI 兼容 API（qwen3.7-max，流式 SSE 输出）
 - **向量数据库**: LanceDB（本地文件存储，支持增量索引）
 - **结构化数据**: SQLite（3729 词条 → 32951 关联边）
-- **评测**: RAGAS（Faithfulness / Context Recall / Context Precision / Answer Relevancy）
-- **测试**: Vitest（166 个测试用例）
+- **评测**: RAGAS（Faithfulness / Context Recall / Context Precision / Answer Relevancy / Answer Correctness / Conciseness / Source Citation）
+- **测试**: Vitest（160 个测试用例）

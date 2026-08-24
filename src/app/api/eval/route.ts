@@ -4,11 +4,20 @@ import path from 'path';
 import { ragChatStream } from '@/lib/ragEngine';
 import { hybridSearch } from '@/lib/hybridSearch';
 import { isIndexReady } from '@/lib/indexManager';
-import { smartRewrite, fallbackRoute } from '@/lib/queryRewriter';
-import { executeStructuredQuery, formatStructResults, getKnownEntityNames, isStructDbReady } from '@/lib/structSearchEngine';
+import { smartRewrite } from '@/lib/queryRewriter';
+import { executeStructuredQuery, getKnownEntityNames, isStructDbReady } from '@/lib/structSearchEngine';
 
 import type { SearchResult } from '@/lib/types';
-import { lookupIndexByQuery, isIndexQuery } from '@/lib/indexLookup';
+import { loadAllChunks } from '@/lib/entityRouter';
+
+function filterChunksByDocTypes(docTypes: string[]): string[] | null {
+  if (!docTypes || docTypes.length === 0) return null;
+  const allChunks = loadAllChunks();
+  const filtered = Object.entries(allChunks)
+    .filter(([_, chunk]) => chunk.metadata.docType && docTypes.includes(chunk.metadata.docType))
+    .map(([chunkId]) => chunkId);
+  return filtered.length > 0 ? filtered : null;
+}
 
 function shouldUseStructuredSearch(matchedEntities: string[]): boolean {
   if (!isStructDbReady()) return false;
@@ -82,11 +91,7 @@ export async function POST(req: NextRequest) {
     const matched = rewriteResult.entities;
     const rewrittenQuery = rewriteResult.rewrittenQuery;
 
-    const routeDecision = rewriteResult.routeDecision;
-    const effectiveRoute = routeDecision?.route ?? fallbackRoute(trimmedQuery, matched)?.route ?? 'semantic';
-
     let results: SearchResult[] = [];
-    let structSummary: string | undefined;
     let entityDocsContent: string | undefined;
     let entitySources: string[] = [];
     let searchMethod: 'rrf' | 'entity' = 'rrf';
@@ -96,32 +101,20 @@ export async function POST(req: NextRequest) {
     if (matched.length > 0 && shouldUseStructuredSearch(matched)) {
       const entityResult = await loadEntityDocsContent(matched);
       if (entityResult) {
-        structSummary = entityResult.structSummary;
         entityDocsContent = entityResult.docsContent;
         entitySources = entityResult.sources;
         searchMethod = 'entity';
       }
     }
 
-    // Index 元信息查询
-    if (!entityDocsContent) {
-      const shouldTryIndex = routeDecision
-        ? routeDecision.indexSection !== null
-        : isIndexQuery(trimmedQuery);
-
-      if (shouldTryIndex) {
-        const indexResult = lookupIndexByQuery(trimmedQuery);
-        if (indexResult) {
-          structSummary = `## 📊 ${indexResult.sectionTitle}\n\n${indexResult.content}`;
-          entityDocsContent = indexResult.content;
-        }
-      }
-    }
-
     // 降级为语义检索
-    if (!entityDocsContent && !structSummary) {
+    if (!entityDocsContent) {
+      const filteredChunkIds = rewriteResult.relevantDocTypes?.length > 0
+        ? filterChunksByDocTypes(rewriteResult.relevantDocTypes)
+        : null;
       const semanticResults = await hybridSearch(rewrittenQuery || trimmedQuery, topK, 20, 20, {
         matchedKeywords: matched.length > 0 ? matched : undefined,
+        filteredChunkIds: filteredChunkIds ?? undefined,
       });
       results = semanticResults;
       searchMethod = 'rrf';
@@ -130,13 +123,12 @@ export async function POST(req: NextRequest) {
     let answer = '';
     let finalResults: SearchResult[] = results;
 
-    if (results.length > 0 || entityDocsContent || structSummary) {
-      const generator = ragChatStream(trimmedQuery, { 
-        apiKey, 
-        baseURL, 
+    if (results.length > 0 || entityDocsContent) {
+      const generator = ragChatStream(trimmedQuery, {
+        apiKey,
+        baseURL,
         model,
         topK,
-        structSummary,
         entityDocsContent,
         preSearchResults: results.length > 0 ? results : undefined,
       });
@@ -227,18 +219,27 @@ function estimateTokens(text: string): number {
  */
 async function loadEntityDocsContent(
   matchedKeywords: string[],
-): Promise<{ structSummary: string; docsContent: string; sources: string[] } | undefined> {
+): Promise<{ docsContent: string; sources: string[] } | undefined> {
   const { isStructDbReady } = await import('@/lib/structSearchEngine');
   if (!isStructDbReady()) {
     console.warn('[Eval] 结构化数据库未就绪');
     return undefined;
   }
 
-  let structResults = await executeStructuredQuery(matchedKeywords, 'or');
-  
+  // 多实体时优先用 AND 精准匹配（避免短词如 "ERP" 匹配到无关文档），
+  // AND 无结果时降级为 OR
+  const useAndFirst = matchedKeywords.length > 1;
+  let structResults = await executeStructuredQuery(matchedKeywords, useAndFirst ? 'and' : 'or');
+
   const hasChunks = structResults.some(r => r.chunks.length > 0);
-  
-  if (!hasChunks) {
+
+  if (!hasChunks && useAndFirst) {
+    console.log(`[Eval] 结构化数据库 AND 查询未命中，降级 OR 查询...`);
+    structResults = await executeStructuredQuery(matchedKeywords, 'or');
+    if (!structResults.some(r => r.chunks.length > 0)) {
+      // OR still failed, try the other way around (just in case)
+    }
+  } else if (!hasChunks && !useAndFirst) {
     console.log(`[Eval] 结构化数据库 OR 查询未命中，尝试 AND 查询...`);
     structResults = await executeStructuredQuery(matchedKeywords, 'and');
   }
@@ -248,7 +249,6 @@ async function loadEntityDocsContent(
     return undefined;
   }
 
-  const structSummary = formatStructResults(structResults);
   console.log(`[Eval] 结构化数据库查询命中: [${matchedKeywords.join(', ')}]，${structResults.length} 条结果`);
 
   const docNames = new Set<string>();
@@ -337,7 +337,6 @@ async function loadEntityDocsContent(
   const sources = [...docNames, ...wikiEntries.keys()];
 
   return {
-    structSummary,
     docsContent: parts.join('\n\n---\n\n'),
     sources,
   };

@@ -4,13 +4,12 @@ import path from 'path';
 import { ragChatStream } from '@/lib/ragEngine';
 import { hybridSearch } from '@/lib/hybridSearch';
 import { isIndexReady } from '@/lib/indexManager';
-import { smartRewrite, fallbackRoute } from '@/lib/queryRewriter';
-import { executeStructuredQuery, formatStructResults } from '@/lib/structSearchEngine';
+import { smartRewrite } from '@/lib/queryRewriter';
+import { executeStructuredQuery } from '@/lib/structSearchEngine';
 import { getQueryEmbedding } from '@/lib/embedding';
 import { searchCache, saveCache, initCache } from '@/lib/ragCache';
 
 import type { SearchResult } from '@/lib/types';
-import { lookupIndexByQuery, isIndexQuery } from '@/lib/indexLookup';
 import {
   getOrCreateSession,
   addMessage,
@@ -20,8 +19,24 @@ import {
   isFollowUpQuery,
   compressConversation,
 } from '@/lib/sessionManager';
+import { loadAllChunks } from '@/lib/entityRouter';
 
 initCache().catch(() => {});
+
+/**
+ * 根据文档类型过滤 chunk ID 列表
+ * @param docTypes - LLM 推荐的文档类型列表
+ * @returns 匹配的 chunkId 数组，如果 docTypes 为空则返回 null（不过滤）
+ */
+function filterChunksByDocTypes(docTypes: string[]): string[] | null {
+  if (!docTypes || docTypes.length === 0) return null;
+  const allChunks = loadAllChunks();
+  const filtered = Object.entries(allChunks)
+    .filter(([_, chunk]) => chunk.metadata.docType && docTypes.includes(chunk.metadata.docType))
+    .map(([chunkId]) => chunkId);
+  console.log(`[Chat] docType 过滤: types=[${docTypes.join(',')}] → ${filtered.length} chunks`);
+  return filtered.length > 0 ? filtered : null;
+}
 
 export async function POST(req: NextRequest) {
   const {
@@ -89,10 +104,6 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // 路由降级：LLM 不可用时用正则匹配
-        const fallbackRouteResult = routeDecision ? null : fallbackRoute(trimmedQuery, matched);
-        const effectiveRoute = routeDecision?.route ?? fallbackRouteResult?.route ?? 'semantic';
-
         // 缓存命中时快速返回
         if (cachedResult) {
           console.log(`[Cache] 命中语义缓存: "${rewrittenQuery.slice(0, 30)}..."`);
@@ -140,7 +151,6 @@ export async function POST(req: NextRequest) {
 
         // 1. 统一检索策略：优先实体关联文档，无实体命中时走语义检索
         let results: SearchResult[] = [];
-        let structSummary: string | undefined;
         let entityDocsContent: string | undefined;
         let searchMethod: 'rrf' | 'entity' = 'rrf';
 
@@ -148,42 +158,29 @@ export async function POST(req: NextRequest) {
           // 有实体关键词命中：从 SQLite 查关联文档列表，加载 Raw 全文/片段
           const entityResult = await loadEntityDocsContent(matched);
           if (entityResult) {
-            structSummary = entityResult.structSummary;
             entityDocsContent = entityResult.docsContent;
             searchMethod = 'entity';
             console.log(`[Chat] 实体关联命中: [${matched.join(', ')}] (${rewriteResult.method})，跳过语义检索`);
           }
         }
 
-        // 如果实体关联无结果，尝试 index.md 元信息查询
+        // 如果实体关联无结果，降级为语义检索（使用改写后的 query）
         if (!entityDocsContent) {
-          // LLM 路由决策优先，fallback 时用本地硬编码
-          const shouldTryIndex = routeDecision
-            ? routeDecision.indexSection !== null
-            : isIndexQuery(trimmedQuery);
-
-          if (shouldTryIndex) {
-            const indexResult = lookupIndexByQuery(trimmedQuery);
-            if (indexResult) {
-              structSummary = `## 📊 ${indexResult.sectionTitle}\n\n${indexResult.content}`;
-              entityDocsContent = indexResult.content;
-              console.log(`[Chat] IndexLookup 命中: ${indexResult.matchedIntent} (${routeDecision ? 'LLM路由' : '本地规则'})`);
-            }
-          }
-        }
-
-        // 如果结构化查询也无结果，降级为语义检索（使用改写后的 query）
-        if (!entityDocsContent && !structSummary) {
           const searchQuery = rewriteResult.method === 'llm' ? rewrittenQuery : enrichedQuery;
           console.log(`[Chat] 无实体关联结果，降级为语义检索（向量+BM25），query="${searchQuery.slice(0, 50)}"`);
+          // 如果有 LLM 推荐的文档类型，先过滤 chunk 再检索
+          const filteredChunkIds = rewriteResult.relevantDocTypes?.length > 0
+            ? filterChunksByDocTypes(rewriteResult.relevantDocTypes)
+            : null;
           results = await hybridSearch(searchQuery, topK, 20, 20, {
             matchedKeywords: matched.length > 0 ? matched : undefined,
+            filteredChunkIds: filteredChunkIds ?? undefined,
           });
           searchMethod = 'rrf';
         }
 
         // 保存检索结果到会话（用于后续追问）
-        saveLastSearchResults(session.id, trimmedQuery, results, searchMethod, structSummary);
+        saveLastSearchResults(session.id, trimmedQuery, results, searchMethod);
 
         // 发送检索方法信息
         controller.enqueue(
@@ -192,14 +189,10 @@ export async function POST(req: NextRequest) {
               type: 'method',
               method: searchMethod,
               matchedKeywords: matched.length > 0 ? matched : undefined,
-              structSummary: structSummary || undefined,
               entityDocsContent: entityDocsContent || undefined,
               sessionId: session.id,
               rewriteMethod: rewriteResult.method,
               rewrittenQuery: rewriteResult.method === 'llm' ? rewrittenQuery : undefined,
-              routeSource: routeDecision ? 'llm' : 'regex-fallback',
-              route: effectiveRoute,
-              fallbackRouteReason: fallbackRouteResult?.reason,
             })}\n\n`
           )
         );
@@ -212,14 +205,10 @@ export async function POST(req: NextRequest) {
           baseURL,
           model,
           preSearchResults: results,
-          structSummary,
           entityDocsContent,
           conversationContext: historyText || undefined,
           isFollowUp,
-          enableExpansion: true,  // 启用 Small-to-Big 自适应窗口扩展
           matchedKeywords: matched.length > 0 ? matched : undefined,
-          /** LLM 路由决策的窗口大小（优先于 adaptiveWindow 内部判断） */
-          contextWindowOverride: routeDecision?.contextWindow,
         });
 
         for await (const event of generator) {
@@ -340,11 +329,11 @@ function estimateTokens(text: string): number {
  * - 长文档（≥ 3000 token）：提取实体关键字上下 ±200 token 的片段，
  *   每个文档最多取 3 个片段，重叠区间自动合并
  *
- * @returns structSummary（文档列表摘要）+ docsContent（文档全文/片段），或 undefined
+ * @returns docsContent（文档全文/片段），或 undefined
  */
 async function loadEntityDocsContent(
   matchedKeywords: string[],
-): Promise<{ structSummary: string; docsContent: string } | undefined> {
+): Promise<{ docsContent: string } | undefined> {
   // 1. 查结构化数据库，获取关联文档列表
   const { isStructDbReady } = await import('@/lib/structSearchEngine');
   if (!isStructDbReady()) {
@@ -352,13 +341,21 @@ async function loadEntityDocsContent(
     return undefined;
   }
 
-  const structResults = await executeStructuredQuery(matchedKeywords, 'or');
+  // 多实体时优先用 AND 精准匹配（避免短词如 "ERP" 匹配到无关文档），
+  // AND 无结果时降级为 OR
+  const useAndFirst = matchedKeywords.length > 1;
+  let structResults = await executeStructuredQuery(matchedKeywords, useAndFirst ? 'and' : 'or');
+
+  if (structResults.length === 0 && useAndFirst) {
+    console.log(`[Chat] 结构化数据库 AND 查询未命中，降级 OR 查询...`);
+    structResults = await executeStructuredQuery(matchedKeywords, 'or');
+  }
+
   if (structResults.length === 0) {
     console.log(`[Chat] 结构化数据库未查到 [${matchedKeywords.join(', ')}] 的关联文档`);
     return undefined;
   }
 
-  const structSummary = formatStructResults(structResults);
   console.log(`[Chat] 结构化数据库查询命中: [${matchedKeywords.join(', ')}]，${structResults.length} 条结果`);
 
   // 2. 收集所有关联文档名（去重）
@@ -429,7 +426,6 @@ async function loadEntityDocsContent(
   );
 
   return {
-    structSummary,
     docsContent: parts.join('\n\n---\n\n'),
   };
 }

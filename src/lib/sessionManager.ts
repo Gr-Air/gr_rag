@@ -116,7 +116,6 @@ export function saveLastSearchResults(
   query: string,
   results: SearchResult[],
   method: SearchMethod,
-  structSummary?: string
 ): void {
   const session = sessions.get(sessionId);
   if (!session) return;
@@ -125,7 +124,6 @@ export function saveLastSearchResults(
     query,
     results,
     method,
-    structSummary,
   };
   session.updatedAt = Date.now();
 }

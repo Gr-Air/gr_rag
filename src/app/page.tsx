@@ -16,7 +16,6 @@ interface Message {
     docPath?: string;
   }>;
   matchedKeywords?: string[];
-  structSummary?: string;
 }
 
 const QUICK_PROMPTS = [
@@ -100,7 +99,6 @@ export default function HomePage() {
                       return {
                         ...msg,
                         matchedKeywords: data.matchedKeywords,
-                        structSummary: data.structSummary,
                       };
                     } else if (data.type === "context") {
                       return { ...msg, context: data.results };
@@ -230,13 +228,6 @@ export default function HomePage() {
                   <EntityTags keywords={msg.matchedKeywords} />
                 )}
 
-                {msg.structSummary && (
-                  <StructResultCard
-                    structSummary={msg.structSummary}
-                    matchedKeywords={msg.matchedKeywords}
-                  />
-                )}
-
                 {msg.context && msg.context.length > 0 && (
                   <ReferenceCards contexts={msg.context} />
                 )}
@@ -334,94 +325,6 @@ function EntityTags({ keywords }: { keywords: string[] }) {
           {kw}
         </span>
       ))}
-    </div>
-  );
-}
-
-function StructResultCard({
-  structSummary,
-  matchedKeywords,
-}: {
-  structSummary: string;
-  matchedKeywords?: string[];
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  const lines = structSummary.split("\n").filter((l) => l.trim());
-  const sections: { keyword: string; freq: number; docs: { name: string; chunks: string[] }[] }[] = [];
-
-  let currentSection: { keyword: string; freq: number; docs: { name: string; chunks: string[] }[] } | null = null;
-  let currentDoc: { name: string; chunks: string[] } | null = null;
-
-  for (const line of lines) {
-    const headingMatch = line.match(/^### (.+?)\(频次:\s*(\d+)\)/);
-    if (headingMatch) {
-      if (currentSection) sections.push(currentSection);
-      currentSection = { keyword: headingMatch[1].trim(), freq: parseInt(headingMatch[2]), docs: [] };
-      currentDoc = null;
-    } else if (line.startsWith("  - ") && currentSection) {
-      const docName = line.replace(/^\s*-\s*/, "").trim();
-      currentDoc = { name: docName, chunks: [] };
-      currentSection.docs.push(currentDoc);
-    } else if (line.startsWith("    ") && currentDoc) {
-      const chunkContent = line.trim();
-      currentDoc.chunks.push(chunkContent);
-    }
-  }
-  if (currentSection) sections.push(currentSection);
-
-  const totalDocs = sections.reduce((sum, s) => sum + s.docs.length, 0);
-
-  return (
-    <div className="mb-3 pb-3 border-b border-slate-200/50">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full text-left text-xs text-slate-500 flex items-center gap-1.5 hover:bg-white/60 rounded-lg px-2 py-1.5 transition-all duration-200"
-      >
-        <span className={`flex-shrink-0 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}>
-          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </span>
-        <span className="font-medium text-slate-600">关联查询</span>
-        {matchedKeywords && matchedKeywords.length > 0 && (
-          <span className="text-[10px] opacity-60">({matchedKeywords.join("、")})</span>
-        )}
-        <span className="text-[10px] opacity-50 font-mono ml-auto">
-          {sections.length}实体 · {totalDocs}文档
-        </span>
-      </button>
-
-      {expanded && (
-        <div className="mt-1 mx-6 mb-1 animate-fade-in-up">
-          <div className="text-[11px] leading-relaxed text-slate-600 bg-indigo-50/50 border border-indigo-100 rounded-xl px-3 py-2 max-h-80 overflow-y-auto">
-            {sections.map((section, si) => (
-              <div key={si} className={si > 0 ? "mt-2 pt-2 border-t border-indigo-100/50" : ""}>
-                <div className="font-semibold text-indigo-700 mb-1">
-                  {section.keyword}
-                  <span className="font-normal text-slate-400 ml-1">({section.freq})</span>
-                </div>
-                <div className="space-y-1">
-                  {section.docs.map((doc, di) => (
-                    <div key={di} className="pl-2">
-                      <div className="text-slate-500 text-[11px]">· {doc.name}</div>
-                      {doc.chunks.length > 0 && (
-                        <div className="mt-0.5 pl-2 space-y-0.5">
-                          {doc.chunks.map((chunk, ci) => (
-                            <div key={ci} className="text-slate-400 text-[10px] bg-white/50 rounded px-1.5 py-0.5 border border-indigo-50">
-                              {chunk}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

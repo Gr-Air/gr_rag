@@ -8,7 +8,6 @@
 
 export {
   executeStructuredQuery,
-  formatStructResults,
 } from './structSearchEngine';
 
 // 保留类型导出（向后兼容）

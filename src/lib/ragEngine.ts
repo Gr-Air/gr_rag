@@ -1,10 +1,10 @@
 // ============================================================
 // RAG 问答引擎
-// 流程：用户问题 -> 混合检索(top5) -> Small-to-Big扩展 -> 构建prompt -> LLM流式回答
+// 流程：用户问题 -> 混合检索(top5) -> Rerank(top5) -> 构建prompt -> LLM流式回答
 // 支持多轮对话和上下文压缩
 // ============================================================
 
-import { hybridSearch, expandToParentContext, adaptiveContextWindow } from './hybridSearch';
+import { hybridSearch } from './hybridSearch';
 import { SearchResult } from './types';
 import OpenAI from 'openai';
 import { rerank } from './reranker';
@@ -18,7 +18,6 @@ function buildRAGPrompt(
   query: string,
   searchResults: SearchResult[],
   options?: {
-    structSummary?: string;
     entityDocsContent?: string;
     conversationContext?: string;
     isFollowUp?: boolean;
@@ -56,7 +55,6 @@ function buildRAGPrompt(
     isFollowUp: options?.isFollowUp,
     intent: options?.intent,
     entityDocsContent: options?.entityDocsContent,
-    structSummary: options?.structSummary,
   });
 }
 
@@ -70,27 +68,20 @@ export async function* ragChatStream(
     topK?: number;
     /** 预检索结果，如果提供则跳过检索步骤 */
     preSearchResults?: SearchResult[];
-    /** 结构化查询结果摘要 */
-    structSummary?: string;
     /** 实体关联的 Raw 文档全文内容 */
     entityDocsContent?: string;
     /** 对话历史上下文（用于多轮对话） */
     conversationContext?: string;
     /** 是否为追问 */
     isFollowUp?: boolean;
-    /** 是否启用 Small-to-Big 扩展 */
-    enableExpansion?: boolean;
-    /** 匹配到的实体关键字（用于自适应窗口判断） */
+    /** 匹配到的实体关键字 */
     matchedKeywords?: string[];
-    /** LLM 路由决策的窗口大小（优先于 adaptiveWindow 内部判断，避免二次 LLM 调用） */
-    contextWindowOverride?: number;
   }
 ): AsyncGenerator<{ type: 'context' | 'token' | 'done' | 'error'; content?: string; results?: SearchResult[] }> {
   const topK = options?.topK || 5;
   const apiKey = options?.apiKey || process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || '';
   const baseURL = options?.baseURL || process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL || '';
   const model = options?.model || process.env.LLM_MODEL || 'gpt-3.5-turbo';
-  const enableExpansion = options?.enableExpansion !== false; // 默认开启
 
   // Step 1: 检索（如果已有预检索结果则跳过；如果有实体文档内容也跳过）
   let searchResults: SearchResult[];
@@ -114,35 +105,6 @@ export async function* ragChatStream(
     }
   }
 
-  // Step 1.5: Small-to-Big 扩展（将子 chunk 扩展到父文档上下文）
-  if (enableExpansion && searchResults.length > 0) {
-    try {
-      // 优先使用 LLM 路由决策传入的窗口大小，避免二次 LLM 调用
-      let window: number;
-      if (options?.contextWindowOverride && [1, 2, 3].includes(options.contextWindowOverride)) {
-        window = options.contextWindowOverride;
-        console.log(`[RAG] 使用 LLM 路由决策窗口: contextWindow=${window} (query="${query.slice(0, 50)}")`);
-      } else {
-        // fallback: 本地规则优先，不确定时 LLM 判断
-        window = await adaptiveContextWindow(query, {
-          matchedKeywords: options?.matchedKeywords,
-          structSummary: options?.structSummary,
-          apiKey: options?.apiKey,
-          baseURL: options?.baseURL,
-          model: options?.model,
-        });
-        console.log(`[RAG] 自适应窗口: contextWindow=${window} (query="${query.slice(0, 50)}")`);
-      }
-      const expandedResults = expandToParentContext(searchResults, window);
-      if (expandedResults.length > 0) {
-        console.log(`[RAG] Small-to-Big 扩展: ${searchResults.length} → ${expandedResults.length} 个上下文块 (窗口±${window})`);
-        searchResults = expandedResults;
-      }
-    } catch (err) {
-      console.warn('[RAG] Small-to-Big 扩展失败，使用原始结果:', err);
-    }
-  }
-
   // 检查检索结果（如果有实体文档内容，允许跳过语义检索结果）
   if (searchResults.length === 0 && !options?.entityDocsContent) {
     yield { type: 'error', content: '未找到相关文档，请尝试更换查询关键词' };
@@ -152,11 +114,11 @@ export async function* ragChatStream(
   // 返回检索上下文给前端展示（Rerank 之前，保留完整数量）
   yield { type: 'context', results: searchResults };
 
-  // Step 1.6: Rerank 重排序（语义相关性精排，仅用于 LLM prompt，不影响前端展示）
+  // Step 1.5: Rerank 重排序（语义相关性精排，仅用于 LLM prompt，不影响前端展示）
   let promptResults = searchResults;
-  if (searchResults.length > 3) {
+  if (searchResults.length > 5) {
     try {
-      const rerankedResults = await rerank(query, searchResults, 3);
+      const rerankedResults = await rerank(query, searchResults, 5);
       if (rerankedResults.length > 0) {
         console.log(`[RAG] Rerank 重排序: ${searchResults.length} → ${rerankedResults.length} 个文档块（仅影响 LLM prompt）`);
         promptResults = rerankedResults;
@@ -168,7 +130,6 @@ export async function* ragChatStream(
 
   // Step 2: 构建 prompt（传入对话历史上下文和追问标记，使用精排后的结果）
   const { systemPrompt, userPrompt } = buildRAGPrompt(query, promptResults, {
-    structSummary: options?.structSummary,
     entityDocsContent: options?.entityDocsContent,
     conversationContext: options?.conversationContext,
     isFollowUp: options?.isFollowUp,
@@ -186,7 +147,7 @@ export async function* ragChatStream(
       baseURL: baseURL || undefined,
     });
 
-    const isReasoningModel = model.toLowerCase().includes('mimo') || model.toLowerCase().includes('reasoning');
+    const isReasoningModel = model.toLowerCase().includes('reasoning') || model.toLowerCase().includes('deepseek-r1');
 
     const stream = await client.chat.completions.create({
       model,

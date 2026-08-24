@@ -62,3 +62,10 @@ test/rag-eval/__pycache__/
 test/rag-eval/results/
 test/rag-eval/report_*.json
 test/rag-eval/summary_*.md
+
+
+# spec目录也不提交到 GitHub
+spec/
+spec/**
+spec/**
+spec/**

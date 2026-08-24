@@ -23,14 +23,13 @@ export async function GET(req: NextRequest) {
   try {
     const trimmedQuery = query.trim();
     const routedResult = await routedSearch(trimmedQuery, topK, { forceMethod: searchMethod });
-    const { results, method, matchedKeywords, structSummary } = routedResult;
+    const { results, method, matchedKeywords } = routedResult;
 
     return NextResponse.json({
       query,
       matchedKeywords,
       method,
       total: results.length,
-      structSummary,
       results: results.map(r => ({
         id: r.chunk.id,
         docId: r.chunk.docId,

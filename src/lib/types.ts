@@ -48,7 +48,7 @@ export interface WikiEntry {
 }
 
 /** 检索来源类型 */
-export type SearchSource = 'vector' | 'bm25' | 'hybrid' | 'entity' | 'structured';
+export type SearchSource = 'vector' | 'bm25' | 'rrf' | 'entity';
 
 /** 检索方法 */
 export type SearchMethod = 'rrf' | 'entity';
@@ -108,7 +108,6 @@ export interface ChatSession {
     query: string;
     results: SearchResult[];
     method: SearchMethod;
-    structSummary?: string;
   };
   createdAt: number;
   updatedAt: number;

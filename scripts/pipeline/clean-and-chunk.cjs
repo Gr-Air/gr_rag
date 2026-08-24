@@ -23,7 +23,6 @@ const { scanAll, WIKI_DIR } = require('../lib/scanner.cjs');
 const { cleanDocument } = require('../lib/cleaner.cjs');
 const {
   chunkDocument,
-  buildWikiChunk,
   extractTitle,
   parseFilename,
 } = require('../lib/chunker.cjs');
@@ -552,16 +551,7 @@ async function main() {
     }
   }
 
-  // 4. Wiki 词条（概念 + 实体）
-  console.log('\n[4/5] 处理 Wiki 词条...');
-  for (const entry of processedWikiEntries) {
-    const chunk = buildWikiChunk(entry.name, entry.type, entry.file, entry.content);
-    sourceFiles.push(entry.file);
-    allChunks.push(chunk);
-  }
-  console.log(`  Wiki 词条: ${processedWikiEntries.length}`);
-
-  // 5. 写入中间存储
+  // 4. 写入中间存储
   console.log('\n[5/5] 写入中间存储...');
 
   if (opts.dryRun) {

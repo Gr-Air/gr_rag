@@ -119,6 +119,7 @@ export async function hybridSearch(
   bm25TopN: number = 20,
   options?: {
     matchedKeywords?: string[];
+    filteredChunkIds?: string[];
   }
 ): Promise<SearchResult[]> {
   console.log(`[Hybrid] 查询: "${query}", topK=${topK}`);
@@ -150,7 +151,7 @@ export async function hybridSearch(
   const effectiveVectorTopN = isEntityQuery ? vectorTopN : vectorTopN * 2;
   const effectiveBm25TopN = isEntityQuery ? bm25TopN : bm25TopN * 2;
   
-  const [vectorResults, bm25Results] = await Promise.all([
+  let [vectorResults, bm25Results] = await Promise.all([
     vectorSearch(query, effectiveVectorTopN).catch(err => {
       console.error('[Hybrid] 向量检索失败:', err);
       return [] as Array<{ chunkId: string; score: number }>;
@@ -162,6 +163,17 @@ export async function hybridSearch(
   ]);
 
   console.log(`[Hybrid] 向量检索: ${vectorResults.length} 条, BM25 检索: ${bm25Results.length} 条`);
+
+  // Step 1.1: 按 docType 过滤（如果调用方传入了 filteredChunkIds）
+  const filteredChunkIds = options?.filteredChunkIds;
+  if (filteredChunkIds && filteredChunkIds.length > 0) {
+    const filterSet = new Set(filteredChunkIds);
+    const vecBefore = vectorResults.length;
+    const bm25Before = bm25Results.length;
+    vectorResults = vectorResults.filter(r => filterSet.has(r.chunkId));
+    bm25Results = bm25Results.filter(r => filterSet.has(r.chunkId));
+    console.log(`[Hybrid] docType 过滤: vec ${vecBefore}→${vectorResults.length}, bm25 ${bm25Before}→${bm25Results.length}`);
+  }
 
   // Step 1.5: 如果有实体关键字，对向量搜索结果做关键词过滤
   // 向量搜索基于语义相似度，可能召回语义相似但不包含目标实体的文档
@@ -401,7 +413,6 @@ function localAdaptiveWindow(
   query: string,
   options?: {
     matchedKeywords?: string[];
-    structSummary?: string;
   }
 ): number | null {
   const q = query.trim();
@@ -442,11 +453,8 @@ function localAdaptiveWindow(
   }
 
   // ================================================================
-  // 规则 3: 命中结构化数据库 → ±2（需要更多关联信息）
+  // 规则 3: 多关键词匹配 → ±2（需要更多关联信息）
   // ================================================================
-  if (options?.structSummary && options.structSummary.length > 0) {
-    return 2;
-  }
   if (options?.matchedKeywords && options.matchedKeywords.length >= 2) {
     return 2;
   }
@@ -564,7 +572,6 @@ export async function adaptiveContextWindow(
   query: string,
   options?: {
     matchedKeywords?: string[];
-    structSummary?: string;
     /** LLM 配置（本地规则无法确定时需要） */
     apiKey?: string;
     baseURL?: string;
@@ -574,7 +581,6 @@ export async function adaptiveContextWindow(
   // Step 1: 本地规则快速判断
   const localResult = localAdaptiveWindow(query, {
     matchedKeywords: options?.matchedKeywords,
-    structSummary: options?.structSummary,
   });
   if (localResult !== null) {
     console.log(`[AdaptiveWindow] 本地规则命中: 窗口=${localResult} (query="${query.slice(0, 50)}")`);
