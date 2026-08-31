@@ -5,8 +5,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { DocChunk } from '../src/lib/types';
-import { tokenize } from '../src/lib/tokenizer';
+import { DocChunk } from '../src/domain/document/types';
+import { tokenize } from '../src/infrastructure/tokenizer/tokenizer';
 
 const envPath = path.join(__dirname, '..', '.env');
 if (fs.existsSync(envPath)) {
@@ -187,7 +187,7 @@ async function main() {
   let vecShardIndex = 0;
   let metaShardIndex = 0;
   let currentVecs: number[][] = [];
-  let currentMeta: Array<{ id: string; docId: string; docTitle: string; docPath: string; metadata: any; content: string; wikiLinks: string[] }> = [];
+  let currentMeta: Array<{ id: string; docId: string; docTitle: string; docPath: string; metadata: DocChunk['metadata']; content: string; wikiLinks: string[] }> = [];
 
   const chunkGenerator = generateAllChunks();
 
@@ -241,7 +241,7 @@ async function main() {
       }
 
       if (Object.keys(docLengths).length % metaShardSize === 0 && Object.keys(docLengths).length > 0) {
-        const shard: Record<string, any> = {};
+        const shard: Record<string, (typeof currentMeta)[number]> = {};
         const startIdx = Object.keys(docLengths).length - metaShardSize;
         for (let j = startIdx; j < Object.keys(docLengths).length; j++) {
           const idx = Object.keys(docLengths)[j];
@@ -281,7 +281,7 @@ async function main() {
   const entries = Array.from(invIndex.entries());
   const bm25ShardSize = 5000;
   for (let i = 0; i < entries.length; i += bm25ShardSize) {
-    const shard: Record<string, any> = {};
+    const shard: Record<string, Array<{ chunkId: string; tf: number }>> = {};
     for (let j = i; j < Math.min(i + bm25ShardSize, entries.length); j++) {
       shard[entries[j][0]] = entries[j][1];
     }

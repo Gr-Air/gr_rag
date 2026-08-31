@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { WikiStats } from "@/lib/types";
+import { WikiStats } from "@/application/kb/kbTypes";
 
 interface RawDoc {
   id: string;

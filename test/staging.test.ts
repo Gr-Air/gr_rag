@@ -4,11 +4,23 @@
 // ============================================================
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
-const staging = require('../scripts/lib/staging.cjs');
+import {
+  getGitCommit,
+  stagingExists,
+  CHUNKS_FILE,
+  MANIFEST_FILE,
+  writeStaging,
+  readStaging,
+  getChunksByDocId,
+  updateStaging,
+  writeManifest,
+  readManifest,
+} from '../scripts/lib/staging.cjs';
+import type { StagingChunk } from '../scripts/lib/staging.cjs';
 
 describe('staging JSONL 格式', () => {
   let tmpDir: string;
@@ -28,7 +40,7 @@ describe('staging JSONL 格式', () => {
       { id: 'chunk_2', content: '内容三' },
     ];
     const file = path.join(tmpDir, 'test.jsonl');
-    const lines = chunks.map((c: any) => JSON.stringify(c));
+    const lines = chunks.map((c) => JSON.stringify(c));
     fs.writeFileSync(file, lines.join('\n') + '\n');
 
     const content = fs.readFileSync(file, 'utf-8');
@@ -63,7 +75,7 @@ describe('staging JSONL 格式', () => {
 describe('staging 模块函数', () => {
   describe('getGitCommit', () => {
     it('返回短 hash 或 unknown', () => {
-      const commit = staging.getGitCommit();
+      const commit = getGitCommit();
       expect(typeof commit).toBe('string');
       expect(commit.length).toBeGreaterThan(0);
       expect(commit === 'unknown' || commit.match(/^[0-9a-f]+$/)).toBeTruthy();
@@ -72,13 +84,13 @@ describe('staging 模块函数', () => {
 
   describe('stagingExists', () => {
     it('返回布尔值', () => {
-      expect(typeof staging.stagingExists()).toBe('boolean');
+      expect(typeof stagingExists()).toBe('boolean');
     });
   });
 });
 
 describe('staging 读写往返', () => {
-  const chunksFile = staging.CHUNKS_FILE;
+  const chunksFile = CHUNKS_FILE;
   let backup: string | null = null;
 
   beforeEach(() => {
@@ -119,8 +131,8 @@ describe('staging 读写往返', () => {
       },
     ];
 
-    staging.writeStaging(testChunks);
-    const read = staging.readStaging();
+    writeStaging(testChunks);
+    const read = readStaging();
     expect(read.length).toBe(2);
     expect(read[0].id).toBe('test_0');
     expect(read[0].sectionTitle).toBe('章节一');
@@ -129,42 +141,42 @@ describe('staging 读写往返', () => {
   });
 
   it('getChunksByDocId 按 docId 过滤', () => {
-    staging.writeStaging([
+    writeStaging([
       { id: 'a_0', docId: 'doc_a', content: 'A0', parentDocId: 'parent_doc_a', chunkIndex: 0 },
       { id: 'a_1', docId: 'doc_a', content: 'A1', parentDocId: 'parent_doc_a', chunkIndex: 1 },
       { id: 'b_0', docId: 'doc_b', content: 'B0', parentDocId: 'parent_doc_b', chunkIndex: 0 },
     ]);
 
-    const result = staging.getChunksByDocId('doc_a');
+    const result = getChunksByDocId('doc_a');
     expect(result.length).toBe(2);
-    expect(result.every((c: any) => c.docId === 'doc_a')).toBe(true);
+    expect(result.every((c) => c.docId === 'doc_a')).toBe(true);
   });
 
   it('updateStaging 移除旧 chunk 并追加新 chunk', () => {
-    staging.writeStaging([
+    writeStaging([
       { id: 'old_0', docId: 'old_doc', content: '旧内容', parentDocId: 'parent_old_doc', chunkIndex: 0 },
       { id: 'keep_0', docId: 'keep_doc', content: '保留内容', parentDocId: 'parent_keep_doc', chunkIndex: 0 },
     ]);
 
-    const all = staging.updateStaging(['old_doc'], [
+    const all = updateStaging(['old_doc'], [
       { id: 'new_0', docId: 'new_doc', content: '新内容', parentDocId: 'parent_new_doc', chunkIndex: 0 },
     ]);
 
     expect(all.length).toBe(2);
-    expect(all.find((c: any) => c.docId === 'old_doc')).toBeUndefined();
-    expect(all.find((c: any) => c.docId === 'keep_doc')).toBeDefined();
-    expect(all.find((c: any) => c.docId === 'new_doc')).toBeDefined();
+    expect(all.find((c) => c.docId === 'old_doc')).toBeUndefined();
+    expect(all.find((c) => c.docId === 'keep_doc')).toBeDefined();
+    expect(all.find((c) => c.docId === 'new_doc')).toBeDefined();
   });
 
   it('readStaging callback 模式逐条处理', () => {
-    staging.writeStaging([
+    writeStaging([
       { id: 'cb_0', docId: 'doc', content: 'A', parentDocId: 'parent_doc', chunkIndex: 0 },
       { id: 'cb_1', docId: 'doc', content: 'B', parentDocId: 'parent_doc', chunkIndex: 1 },
       { id: 'cb_2', docId: 'doc', content: 'C', parentDocId: 'parent_doc', chunkIndex: 2 },
     ]);
 
-    const collected: any[] = [];
-    staging.readStaging((chunk: any) => {
+    const collected: StagingChunk[] = [];
+    readStaging((chunk: StagingChunk) => {
       collected.push(chunk);
     });
     expect(collected.length).toBe(3);
@@ -172,14 +184,14 @@ describe('staging 读写往返', () => {
   });
 
   it('readStaging callback 返回 false 可提前终止', () => {
-    staging.writeStaging([
+    writeStaging([
       { id: 'stop_0', docId: 'doc', content: 'A', parentDocId: 'parent_doc', chunkIndex: 0 },
       { id: 'stop_1', docId: 'doc', content: 'B', parentDocId: 'parent_doc', chunkIndex: 1 },
       { id: 'stop_2', docId: 'doc', content: 'C', parentDocId: 'parent_doc', chunkIndex: 2 },
     ]);
 
-    const collected: any[] = [];
-    staging.readStaging((chunk: any) => {
+    const collected: StagingChunk[] = [];
+    readStaging((chunk: StagingChunk) => {
       collected.push(chunk);
       if (collected.length >= 2) return false;
     });
@@ -188,7 +200,7 @@ describe('staging 读写往返', () => {
 });
 
 describe('staging manifest 读写', () => {
-  const manifestFile = staging.MANIFEST_FILE;
+  const manifestFile = MANIFEST_FILE;
   let backup: string | null = null;
 
   beforeEach(() => {
@@ -204,17 +216,17 @@ describe('staging manifest 读写', () => {
   });
 
   it('写入后读取 manifest', () => {
-    staging.writeManifest({
+    writeManifest({
       totalChunks: 42,
       totalDocs: 5,
       sourceFiles: ['Raw/a.md', 'Raw/b.md'],
       chunkConfig: { minSize: 200, maxSize: 1000, overlap: 0.1 },
     });
 
-    const read = staging.readManifest();
+    const read = readManifest();
     expect(read).not.toBeNull();
     expect(read!.totalChunks).toBe(42);
-    expect(read!.sourceFiles.length).toBe(2);
+    expect(read!.sourceFiles!.length).toBe(2);
     expect(read!.gitCommit).toBeDefined();
     expect(read!.builtAt).toBeDefined();
   });
@@ -223,6 +235,6 @@ describe('staging manifest 读写', () => {
     if (fs.existsSync(manifestFile)) {
       fs.unlinkSync(manifestFile);
     }
-    expect(staging.readManifest()).toBeNull();
+    expect(readManifest()).toBeNull();
   });
 });

@@ -116,11 +116,11 @@ export default function HomePage() {
             }
           }
         }
-      } catch (err: any) {
+      } catch (err) {
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantId
-              ? { ...msg, content: `请求失败: ${err.message}` }
+              ? { ...msg, content: `请求失败: ${err instanceof Error ? err.message : String(err)}` }
               : msg
           )
         );

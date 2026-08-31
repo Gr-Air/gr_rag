@@ -19,7 +19,7 @@ vi.mock('@node-rs/jieba/dict', () => ({
   dict: Buffer.from('mock dict'),
 }));
 
-import { tokenize, createTokenizer } from '@/lib/tokenizer';
+import { tokenize, createTokenizer } from '@/infrastructure/tokenizer/tokenizer';
 
 describe('tokenize', () => {
   beforeEach(() => {

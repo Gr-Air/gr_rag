@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
@@ -26,7 +26,7 @@ const QUICK_PROMPTS = [
   "微服务架构改造涉及哪些技术？",
 ];
 
-export default function ChatPage() {
+function ChatPageContent() {
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
 
@@ -140,11 +140,11 @@ export default function ChatPage() {
             }
           }
         }
-      } catch (err: any) {
+      } catch (err) {
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantId
-              ? { ...msg, content: `请求失败: ${err.message}` }
+              ? { ...msg, content: `请求失败: ${err instanceof Error ? err.message : String(err)}` }
               : msg
           )
         );
@@ -511,5 +511,13 @@ function SourceBadge({ source }: { source: string }) {
     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 border ${styles[source] || "bg-slate-50 text-slate-500 border-slate-100"}`}>
       {labels[source] || source}
     </span>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChatPageContent />
+    </Suspense>
   );
 }

@@ -149,7 +149,7 @@ describe('chunkDocument 表格感知', () => {
     const chunks = chunkDocument(content, 'test_split', '测试', 'test.md', META);
 
     for (let i = 0; i < chunks.length - 1; i++) {
-      const curLastLine = chunks[i].content.split('\n').pop().trim();
+      const curLastLine = chunks[i].content.split('\n').pop()?.trim() ?? '';
       const nextFirstLine = chunks[i + 1].content.split('\n')[0].trim();
 
       const curIsTable = curLastLine.startsWith('|') && curLastLine.endsWith('|');

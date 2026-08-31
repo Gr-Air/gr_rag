@@ -49,7 +49,7 @@ export default function SearchPage() {
       } else {
         setResponse(data);
       }
-    } catch (err: any) {
+    } catch {
       setError("搜索请求失败，请检查服务是否正常运行");
       setResponse(null);
     } finally {

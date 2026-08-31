@@ -5,7 +5,7 @@
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const { initIndexes } = await import('@/lib/indexManager');
+    const { initIndexes } = await import('@/infrastructure/index/indexManager');
     await initIndexes().catch(err => {
       console.error('[Instrumentation] 索引初始化失败:', err);
     });

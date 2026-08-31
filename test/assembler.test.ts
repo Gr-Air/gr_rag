@@ -8,10 +8,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('openai', () => ({ default: vi.fn() }));
 
-import { SearchResultAssembler } from '@/lib/search/assembler';
-import type { ChunkStore, ChunkMeta } from '@/lib/document/types';
-import type { RetrievalHit, DocChunk } from '@/lib/types';
-import type { SearchQuery, QueryAnalysis } from '@/lib/search/types';
+import { SearchResultAssembler } from '@/application/search/assembler';
+import type { ChunkStore, ChunkMeta, DocChunk } from '@/domain/document/types';
+import type { RetrievalHit, SearchQuery, QueryAnalysis } from '@/domain/search/types';
 
 function makeChunk(id: string, content: string, docId?: string): DocChunk {
   return {

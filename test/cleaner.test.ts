@@ -4,7 +4,7 @@
 // ============================================================
 
 import { describe, it, expect } from 'vitest';
-const { cleanDocument, cleanWikiContent } = require('../scripts/lib/cleaner.cjs');
+import { cleanDocument, cleanWikiContent } from '../scripts/lib/cleaner.cjs';
 
 describe('cleanDocument', () => {
   describe('BOM 去除', () => {
@@ -110,7 +110,7 @@ describe('cleanDocument', () => {
       const input = '\uFEFF' + '\u200B'.repeat(100) + '短';
       const result = cleanDocument(input);
       expect(result.warnings.length).toBeGreaterThan(0);
-      expect(result.warnings.some(w => w.includes('cleaning ratio'))).toBe(true);
+      expect(result.warnings.some((w: string) => w.includes('cleaning ratio'))).toBe(true);
     });
   });
 

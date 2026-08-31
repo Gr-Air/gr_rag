@@ -7,16 +7,16 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // mock indexManager 的 getIndexManifest（searchCache 依赖 kbVersion）
-vi.mock('@/lib/indexManager', () => ({
+vi.mock('@/infrastructure/index/indexManager', () => ({
   getIndexManifest: vi.fn(() => ({ builtAt: '2026-08-31T00:00:00.000Z' })),
 }));
 
-import type { IndexManifest } from '@/lib/indexManager';
+import type { IndexManifest } from '@/infrastructure/index/indexManager';
 
-import { searchCache, saveCache, clearCache, getCacheSize, SIMILARITY_THRESHOLD } from '@/lib/searchCache';
-import type { SearchResult } from '@/lib/types';
+import { searchCache, saveCache, clearCache, getCacheSize, SIMILARITY_THRESHOLD } from '@/infrastructure/cache/searchCache';
+import type { SearchResult } from '@/domain/search/types';
 
-const { getIndexManifest } = await import('@/lib/indexManager');
+const { getIndexManifest } = await import('@/infrastructure/index/indexManager');
 const mockedGetIndexManifest = vi.mocked(getIndexManifest);
 
 const CTX = { entities: [], policyVersion: 'v1' };

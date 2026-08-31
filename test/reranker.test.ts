@@ -5,7 +5,7 @@
 // ============================================================
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { SearchResult } from '@/lib/types';
+import type { SearchResult } from '@/domain/search/types';
 
 const fetchMock = vi.fn();
 
@@ -16,7 +16,7 @@ async function loadReranker(apiKey: string | undefined) {
     vi.stubEnv('DASHSCOPE_API_KEY', apiKey);
   }
   vi.stubGlobal('fetch', fetchMock);
-  const { QwenReranker } = await import('@/lib/search/rerankers');
+  const { QwenReranker } = await import('@/infrastructure/search/rerankers');
   return (query: string, results: SearchResult[], topN: number) =>
     new QwenReranker().rerank({ query }, results, topN);
 }

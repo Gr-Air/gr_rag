@@ -7,30 +7,41 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@/lib/vectorEngine', () => ({
+vi.mock('@/infrastructure/vector/vectorEngine', () => ({
   vectorSearch: vi.fn(),
 }));
-vi.mock('@/lib/bm25Engine', () => ({
+vi.mock('@/infrastructure/bm25/bm25Engine', () => ({
   bm25Search: vi.fn(),
   isBM25Ready: vi.fn().mockReturnValue(true),
 }));
-vi.mock('@/lib/document/chunkStore', () => ({
+vi.mock('@/infrastructure/document/jsonChunkStore', () => ({
   getChunkStore: vi.fn(),
 }));
-vi.mock('openai', () => ({ default: vi.fn() }));
 
-import { hybridSearch, _resetAssemblerForTest } from '@/lib/search';
-import { rrfFusion } from '@/lib/search/fusion';
-import { isBroadQuery, adjustTopKForBroadQuery, BROAD_QUERY_TOPK } from '@/lib/search/queryPolicy';
-import { vectorSearch } from '@/lib/vectorEngine';
-import { bm25Search } from '@/lib/bm25Engine';
-import { getChunkStore } from '@/lib/document/chunkStore';
-import type { ChunkStore } from '@/lib/document/types';
-import type { DocChunk, RetrievalHit } from '@/lib/types';
+import { createHybridSearch } from '@/application/search/hybridSearch';
+import { rrfFusion, RRFFusion } from '@/infrastructure/search/fusion';
+import { VectorRetriever } from '@/infrastructure/search/retrievers/vector';
+import { BM25Retriever } from '@/infrastructure/search/retrievers/bm25';
+import { isBroadQuery, adjustTopKForBroadQuery, BROAD_QUERY_TOPK } from '@/domain/search/queryPolicy';
+import { vectorSearch } from '@/infrastructure/vector/vectorEngine';
+import { bm25Search } from '@/infrastructure/bm25/bm25Engine';
+import { getChunkStore } from '@/infrastructure/document/jsonChunkStore';
+import type { ChunkStore, DocChunk } from '@/domain/document/types';
+import type { RetrievalHit } from '@/domain/search/types';
 
 const mockedVectorSearch = vi.mocked(vectorSearch);
 const mockedBm25Search = vi.mocked(bm25Search);
 const mockedGetChunkStore = vi.mocked(getChunkStore);
+
+/** 构建 hybridSearch：真实管线 + 真实 Assembler + mock 检索引擎 */
+function buildHybridSearch(): ReturnType<typeof createHybridSearch> {
+  const chunkStore = mockedGetChunkStore();
+  return createHybridSearch({
+    chunkStore,
+    retrievers: [new VectorRetriever(), new BM25Retriever()],
+    fusion: new RRFFusion(chunkStore),
+  });
+}
 
 function makeChunk(id: string, content: string): DocChunk {
   return {
@@ -255,7 +266,6 @@ describe('rrfFusion', () => {
 describe('hybridSearch 分数链路（spec 027）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    _resetAssemblerForTest();
   });
 
   it('返回值含完整分数链路：vector/bm25/rrf 均可追溯', async () => {
@@ -272,7 +282,7 @@ describe('hybridSearch 分数链路（spec 027）', () => {
       getAll: vi.fn(),
     } as unknown as ChunkStore);
 
-    const results = await hybridSearch('测试查询', 5, 20, 20);
+    const results = await buildHybridSearch()('测试查询', 5, 20, 20);
 
     // 所有结果都有 scores 对象
     for (const r of results) {
@@ -307,7 +317,7 @@ describe('hybridSearch 分数链路（spec 027）', () => {
       getAll: vi.fn(),
     } as unknown as ChunkStore);
 
-    const results = await hybridSearch('徐峰负责哪些项目', 5, 20, 20, {
+    const results = await buildHybridSearch()('徐峰负责哪些项目', 5, 20, 20, {
       matchedKeywords: ['徐峰'],
     });
 
@@ -334,7 +344,7 @@ describe('hybridSearch 分数链路（spec 027）', () => {
       getAll: vi.fn(),
     } as unknown as ChunkStore);
 
-    const results = await hybridSearch('徐峰的文档', 5, 20, 20, {
+    const results = await buildHybridSearch()('徐峰的文档', 5, 20, 20, {
       matchedKeywords: ['徐峰'],
     });
 

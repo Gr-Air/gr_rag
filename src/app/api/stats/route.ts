@@ -1,19 +1,24 @@
+// ============================================================
+// Stats API（Presentation 层）
+// 只负责：请求处理 / JSON 映射 / 错误映射
+// 统计能力在 KbStatsPort / KbStatusPort（经 composition 注入）
+// ============================================================
+
 import { NextResponse } from 'next/server';
-import { getWikiStats } from '@/lib/parser';
-import { isIndexReady, isStructDbReady, getIndexManifest } from '@/lib/indexManager';
+import { getContainer } from '@/composition/container';
 
 export async function GET() {
   try {
-    const stats = getWikiStats();
-    const indexStatus = isIndexReady();
-    const structDbStatus = isStructDbReady();
-    const manifest = getIndexManifest();
+    const { kbStats, kbStatus } = getContainer();
+    const stats = kbStats.getWikiStats();
+    const indexStatus = kbStatus.isIndexReady();
+    const structDbStatus = kbStatus.isStructDbReady();
+    const indexInfo = kbStatus.getIndexInfo();
 
     let structStats = null;
     if (structDbStatus) {
       try {
-        const { getStructStats } = await import('@/lib/structSearchEngine');
-        structStats = getStructStats();
+        structStats = kbStats.getStructStats();
       } catch { /* ignore */ }
     }
 
@@ -22,12 +27,12 @@ export async function GET() {
       indexReady: indexStatus,
       structDbReady: structDbStatus,
       structStats,
-      indexVersion: manifest?.indexVersion ?? null,
-      indexBuiltAt: manifest?.builtAt ?? null,
-      indexBuildMode: manifest?.buildMode ?? null,
+      indexVersion: indexInfo?.indexVersion ?? null,
+      indexBuiltAt: indexInfo?.builtAt ?? null,
+      indexBuildMode: indexInfo?.buildMode ?? null,
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error('[API] 获取统计失败:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
 }

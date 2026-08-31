@@ -15,7 +15,7 @@ import path from 'path';
 import os from 'os';
 
 import manifestLibDefault from '../scripts/lib/manifest.cjs';
-import { evaluateIndexReadiness, checkStoresReady, readManifest } from '@/lib/indexManager';
+import { evaluateIndexReadiness, checkStoresReady, readManifest } from '@/infrastructure/index/indexManager';
 
 /** manifest.cjs（CJS 构建脚本模块）的最小类型声明 */
 interface ManifestLib {

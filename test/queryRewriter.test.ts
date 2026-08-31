@@ -6,7 +6,7 @@
 // ============================================================
 
 import { describe, it, expect } from 'vitest';
-import { fallbackRoute } from '@/lib/queryRewriter';
+import { fallbackRoute } from '@/application/search/queryRewriter';
 
 describe('fallbackRoute', () => {
   describe('无匹配实体', () => {

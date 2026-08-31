@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PromptTemplate } from '@/lib/promptTemplate.js';
+import { PromptTemplate } from '@/application/chat/promptTemplate';
 
 describe('PromptTemplate', () => {
   let template: PromptTemplate;

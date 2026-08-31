@@ -22,8 +22,9 @@ import {
   deleteSession,
   getActiveSessionCount,
   clearAllSessions,
-} from '@/lib/sessionManager';
-import type { DocChunk, SearchResult } from '@/lib/types';
+} from '@/application/chat/sessionManager';
+import type { DocChunk } from '@/domain/document/types';
+import type { SearchResult } from '@/domain/search/types';
 
 function makeChunk(id: string): DocChunk {
   return {

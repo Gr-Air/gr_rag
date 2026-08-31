@@ -14,8 +14,8 @@ vi.mock('fs', () => ({
 vi.mock('openai', () => ({ default: vi.fn() }));
 
 import fs from 'fs';
-import { JsonChunkStore, _resetChunkStoreForTest } from '@/lib/document/chunkStore';
-import type { ChunkMeta } from '@/lib/document/types';
+import { JsonChunkStore, _resetChunkStoreForTest } from '@/infrastructure/document/jsonChunkStore';
+import type { ChunkMeta } from '@/domain/document/types';
 
 const mockedExistsSync = vi.mocked(fs.existsSync);
 const mockedReadFileSync = vi.mocked(fs.readFileSync);

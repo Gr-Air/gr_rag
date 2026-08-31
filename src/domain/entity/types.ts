@@ -40,3 +40,42 @@ export interface EntityRepository {
   /** 检查结构化数据库是否就绪 */
   isReady(): boolean;
 }
+
+// ============================================================
+// 结构化查询 Port（SQLite 实体-文档块关联数据的领域抽象）
+// 实现见 infrastructure/struct/entityAdapters.ts
+// ============================================================
+
+/** 结构化词条记录（实体/概念的关联文档查询结果） */
+export interface StructEntryRecord {
+  id: number;
+  name: string;
+  type: 'concept' | 'entity';
+  category: string;
+  frequency: number;
+  path: string;
+}
+
+/** 结构化关联块记录 */
+export interface StructChunkRecord {
+  entry_id: number;
+  chunk_id: string;
+  context: string;
+}
+
+/** 单个词条的结构化查询结果 */
+export interface StructQueryResult {
+  entry: StructEntryRecord;
+  chunks: StructChunkRecord[];
+}
+
+/**
+ * 结构化查询 Port：按词条名（AND/OR 语义）查询关联文档块
+ * 由 infrastructure SQLite 适配器实现
+ */
+export interface StructQueryPort {
+  /** 检查结构化数据库是否就绪 */
+  isReady(): boolean;
+  /** 多词条联合查询（返回结果只含 type=entity 的词条，与既有语义一致） */
+  query(names: string[], mode?: 'and' | 'or'): Promise<StructQueryResult[]>;
+}

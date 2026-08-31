@@ -10,29 +10,23 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@/lib/vectorEngine', () => ({
-  vectorSearch: vi.fn(),
-}));
-vi.mock('@/lib/bm25Engine', () => ({
-  bm25Search: vi.fn(),
-  isBM25Ready: vi.fn().mockReturnValue(true),
-}));
-vi.mock('@/lib/structSearchEngine', () => ({
+vi.mock('@/infrastructure/struct/structSearchEngine', () => ({
   executeStructuredQuery: vi.fn(),
 }));
-vi.mock('openai', () => ({ default: vi.fn() }));
 
-import { runSearchPipeline } from '@/lib/search/pipeline';
-import { NoopReranker, QwenReranker, getReranker } from '@/lib/search/rerankers';
-import { StructRetriever } from '@/lib/search/retrievers/struct';
-import { executeStructuredQuery } from '@/lib/structSearchEngine';
+import { runSearchPipeline } from '@/application/search/pipeline';
+import { NoopReranker, QwenReranker, getReranker } from '@/infrastructure/search/rerankers';
+import { StructRetriever } from '@/infrastructure/search/retrievers/struct';
+import { executeStructuredQuery } from '@/infrastructure/struct/structSearchEngine';
 import type {
   Retriever,
   Fusion,
   QueryAnalysis,
   RetrievalRequest,
-} from '@/lib/search/types';
-import type { RetrievalHit, SearchResult, DocChunk } from '@/lib/types';
+  RetrievalHit,
+  SearchResult,
+} from '@/domain/search/types';
+import type { DocChunk } from '@/domain/document/types';
 
 const mockedExecuteStructuredQuery = vi.mocked(executeStructuredQuery);
 

@@ -99,27 +99,46 @@ RRF(d) = Σ 1/(k + rank_i(d))，k = 60
 | entity | 查询匹配到实体词条 | SQLite struct_kb.db → Raw 全文/片段 | 精确匹配，全量注入 |
 | rrf | 无实体命中 | LanceDB(1036) + BM25(1036) → docType 过滤 → Rerank top5 | 语义理解，docType 收窄范围 |
 
-### 分层架构（Domain / Application / Infrastructure）
+### 分层架构（Domain / Application / Infrastructure / Composition）
 
-代码按依赖方向分为三层，`src/domain/` 只定义类型与接口，不依赖任何基础设施：
+代码按依赖方向分为四层（Spec 033），依赖只能自上而下，Infrastructure 反向实现 Domain/Application 定义的 Port：
 
 ```
-src/domain/                    # Domain 层：纯类型 + 接口（零依赖）
-├── search/types.ts            #   RetrievalHit / SearchResult / SearchQuery / QueryAnalysis
-│                              #   RetrievalFilter / RetrievalOptions / RetrievalRequest
-│                              #   Retriever / Fusion / Reranker 接口
-├── document/types.ts          #   DocChunk / ChunkMeta / ChunkStore 接口
-└── entity/types.ts            #   WikiEntry / EntityMatch / EntityRepository 接口
+Presentation (src/app)          # HTTP/SSE/DTO/错误映射，经 getContainer() 取 Use Case
+    ↓
+Application (src/application)   # Use Case 编排，只依赖 Domain 抽象
+    ↓
+Domain (src/domain)             # 纯领域模型/规则/Port，零基础设施依赖
+    ↑
+Infrastructure (src/infrastructure) # 全部技术实现（LanceDB/BM25/SQLite/OpenAI/fs）
+Composition (src/composition)   # 组装根：唯一允许实例化 Infrastructure 的位置
 
-src/lib/                       # Application + Infrastructure 层
-├── search/                    # 检索管线（编排固定，组件可替换）
-├── document/                  # ChunkStore 实现（JsonChunkStore）
-└── ...                        # 各基础设施引擎
+src/domain/                     # 纯类型 + 接口（零依赖）
+├── search/types.ts             #   RetrievalHit / SearchResult / SearchQuery / QueryAnalysis
+│                               #   RetrievalFilter / RetrievalOptions / RetrievalRequest
+│                               #   Retriever / Fusion / Reranker 接口
+├── document/types.ts           #   DocChunk / ChunkMeta / ChunkStore 接口
+├── entity/types.ts             #   WikiEntry / EntityRepository / StructQueryPort 接口
+└── search/entityStrategy.ts 等  #  纯领域规则（实体过滤/加成、高亮、queryPolicy）
+
+src/application/                # Use Case + 应用层 Port（ports.ts）
+├── search/                     #   hybridSearch / pipeline / assembler / entitySearch / queryRewriter
+├── chat/                       #   chatService / ragEngine / sessionManager / promptTemplate / entityDocs
+└── eval/evalService.ts         #   评测编排
+
+src/infrastructure/             # Port 实现 + 技术引擎
+├── search/                     #   retrievers/* / fusion.ts (RRFFusion) / rerankers.ts
+├── document/                   #   jsonChunkStore.ts / documentFileStore.ts
+├── struct/                     #   structSearchEngine.ts / entityAdapters.ts
+├── vector|bm25|embedding|llm|cache|index|parser|tokenizer/
+└── ...                         # 各基础设施引擎
+
+src/composition/container.ts    # getContainer()：组装全部实现并注入 Use Case
 ```
 
 ### 检索管线（Spec 029 / 031 / Phase 2 拆分）
 
-`src/lib/search/` 将检索流程抽象为三个接口，管线组装固定在 `pipeline.ts`：
+检索流程抽象为三个接口（定义于 `domain/search/types.ts`），管线编排固定在 `application/search/pipeline.ts`，实现由 Composition Root 注入：
 
 - **Retriever**：`VectorRetriever` / `BM25Retriever` / `StructRetriever`，统一 `search(query: SearchQuery, options: RetrievalOptions) → RetrievalHit[]`
 - **Fusion**：`RRFFusion` 实现 RRF 融合，接收 `QueryAnalysis`（实体过滤）
@@ -144,7 +163,7 @@ Phase 2 将原 `RetrievalContext` 按职责拆分，各组件只接收所需数�
 | `RetrievalOptions` | Retriever 参数（topN / filter / keywords） | Retriever |
 | `RetrievalRequest` | pipeline 聚合请求 | runSearchPipeline |
 
-chunk 读取统一走 `ChunkStore` 接口（`src/lib/document/`），检索引擎（bm25Engine）不再承担 chunk 存储职责。
+chunk 读取统一走 `ChunkStore` 接口（接口在 `src/domain/document/types.ts`，实现在 `src/infrastructure/document/jsonChunkStore.ts`），检索引擎（bm25Engine）不再承担 chunk 存储职责。
 
 ### 表格感知分块
 
@@ -170,7 +189,7 @@ chunk 读取统一走 `ChunkStore` 接口（`src/lib/document/`），检索引�
 | chunks_meta | 文档块元数据（1036 条，仅 Raw 文档） | 上下文提取 |
 | `index_manifest.json` | 索引版本 + builtAt + gitCommit（Spec 026） | 跨索引一致性 + 缓存失效感知 |
 
-**Wiki 文档特殊处理**：`Wiki/concept/` 和 `Wiki/entity/` 目录下的 3853 个词条不再生成 chunk，Wiki 词条内容通过文件系统直接加载（`entityRouter.ts` 的 `fs.readFileSync`），用于实体文档增强。
+**Wiki 文档特殊处理**：`Wiki/concept/` 和 `Wiki/entity/` 目录下的 3853 个词条不再生成 chunk，Wiki 词条内容由 `application/search/entitySearch.ts` 编排、经 `infrastructure/document/documentFileStore.ts`（FsDocumentFileStore）从文件系统直接读取，用于实体文档增强。
 
 ---
 
@@ -280,6 +299,7 @@ llm-wiki/
 │   │   ├── indexWriter.cjs      #   索引写入器
 │   │   ├── linker.cjs           #   实体链接
 │   │   ├── scanner.cjs          #   文件扫描器
+│   │   ├── manifest.cjs         #   索引清单原子写入（Spec 026）
 │   │   ├── staging.cjs          #   中间存储管理
 │   │   ├── tokenizer.cjs        #   分词器（jieba + 业务词典）
 │   │   └── wikiWriter.cjs       #   Wiki 词条写入
@@ -287,10 +307,36 @@ llm-wiki/
 │   ├── buildIncremental.cjs     # 增量索引构建
 │   └── buildStructDb.cjs        # 结构化数据库构建
 ├── src/
-│   ├── domain/                  # Domain 层：纯类型 + 接口（零依赖，Phase 1 建立）
-│   │   ├── search/types.ts      #   检索类型 + Retriever/Fusion/Reranker 接口
+│   ├── domain/                  # Domain 层：纯类型 + 领域规则 + Port（零依赖，Spec 033）
+│   │   ├── search/
+│   │   │   ├── types.ts         #   检索类型 + Retriever/Fusion/Reranker 接口
+│   │   │   ├── entityStrategy.ts #  实体过滤标记 + 匹配度加成（纯函数）
+│   │   │   ├── highlight.ts     #   关键词高亮
+│   │   │   └── queryPolicy.ts   #   宽泛查询识别 + POLICY_VERSION
 │   │   ├── document/types.ts    #   DocChunk / ChunkMeta / ChunkStore 接口
-│   │   └── entity/types.ts      #   WikiEntry / EntityMatch / EntityRepository 接口
+│   │   └── entity/              #   WikiEntry / EntityRepository / StructQueryPort
+│   │       ├── types.ts         #     接口定义
+│   │       ├── keywordMatcher.ts #    贪心最大匹配（字典注入）
+│   │       └── snippets.ts      #     实体片段提取
+│   ├── application/             # Application 层：Use Case 编排 + Port 定义（Spec 033）
+│   │   ├── ports.ts             #   LlmClient / EmbeddingPort / SearchCachePort / KbStatusPort 等
+│   │   ├── search/              #   hybridSearch / pipeline / assembler / entitySearch / queryRewriter
+│   │   ├── chat/                #   chatService / ragEngine / sessionManager / promptTemplate / entityDocs
+│   │   ├── eval/evalService.ts  #   评测编排
+│   │   └── kb/kbTypes.ts        #   WikiStats
+│   ├── infrastructure/          # Infrastructure 层：Port 实现 + 技术引擎（Spec 033）
+│   │   ├── search/              #   retrievers/{vector,bm25,struct} / fusion.ts (RRFFusion) / rerankers.ts
+│   │   ├── document/            #   jsonChunkStore.ts (ChunkStore 实现) / documentFileStore.ts
+│   │   ├── struct/              #   structSearchEngine.ts / entityAdapters.ts (SQLite 适配)
+│   │   ├── vector/vectorEngine.ts    # LanceDB 向量检索引擎
+│   │   ├── bm25/bm25Engine.ts        # BM25 倒排索引引擎
+│   │   ├── embedding/           #   DashScope Embedding API + Port 适配
+│   │   ├── llm/openaiClient.ts  #   LlmClient 实现（OpenAI 兼容 API）
+│   │   ├── cache/searchCache.ts #   检索结果缓存（进程内 LRU 语义缓存）
+│   │   ├── index/               #   indexManager.ts (manifest 版本管理) / kbStatus.ts
+│   │   ├── parser/              #   Markdown 解析器 + kbStats.ts
+│   │   └── tokenizer/           #   jieba 分词 + 业务自定义词典
+│   ├── composition/container.ts # 组装根：getContainer() 实例化 Infrastructure 并注入 Use Case
 │   ├── app/
 │   │   ├── page.tsx             # 首页仪表盘
 │   │   ├── chat/page.tsx        # AI 问答页（多轮对话 + 流式输出）
@@ -302,41 +348,13 @@ llm-wiki/
 │   │       ├── eval/route.ts    # 离线评测 API
 │   │       ├── stats/route.ts   # 知识库统计 API
 │   │       └── docs/list/       # 文档列表 API
-│   ├── lib/
-│   │   ├── types.ts             # Application/Infrastructure 类型 + domain 类型 re-export
-│   │   ├── document/            # ChunkStore（Spec 031，统一 chunk 读取入口）
-│   │   │   ├── types.ts         #   re-export domain 类型（兼容层）
-│   │   │   └── chunkStore.ts    #   JsonChunkStore 实现
-│   │   ├── search/              # 混合检索模块（Spec 028-031 + Phase 2 拆分）
-│   │   │   ├── types.ts         #   re-export domain 检索类型（兼容层）
-│   │   │   ├── index.ts         #   hybridSearch 入口（构建 RetrievalRequest）
-│   │   │   ├── pipeline.ts      #   固定管线：[Vector+BM25] → 过滤 → RRF → RetrievalHit[]
-│   │   │   ├── assembler.ts     #   组装器：RetrievalHit[] → SearchResult[]
-│   │   │   ├── fusion.ts        #   RRFFusion 实现 + rrfFusion 纯函数
-│   │   │   ├── entityStrategy.ts #  实体过滤标记 + 匹配度加成
-│   │   │   ├── highlight.ts     #   关键词高亮
-│   │   │   ├── queryPolicy.ts   #   宽泛查询识别 + POLICY_VERSION
-│   │   │   ├── retrievers/      #   VectorRetriever / BM25Retriever / StructRetriever
-│   │   │   └── rerankers/       #   QwenReranker / NoopReranker
-│   │   ├── entityRouter.ts      # 实体路由（关键字提取 + 结构化查询）
-│   │   ├── structSearchEngine.ts # SQLite 结构化检索引擎
-│   │   ├── queryRewriter.ts     # LLM 查询改写 + 实体提取
-│   │   ├── promptTemplate.ts    # 多场景提示词模板管理
-│   │   ├── ragEngine.ts         # RAG 生成引擎（OpenAI 兼容 API）
-│   │   ├── searchCache.ts       # 检索结果缓存（进程内 LRU 语义缓存）
-│   │   ├── tokenizer.ts         # jieba 分词 + 业务自定义词典
-│   │   ├── embedding.ts         # DashScope Embedding API
-│   │   ├── vectorEngine.ts      # LanceDB 向量检索引擎
-│   │   ├── bm25Engine.ts        # BM25 倒排索引引擎
-│   │   ├── parser.ts            # Markdown 文档解析器（语义分块）
-│   │   ├── indexManager.ts      # 索引管理器（含 index_manifest 版本管理）
-│   │   └── sessionManager.ts    # 多轮对话会话管理
 │   └── data/                    # 预构建索引数据（git 追踪）
 │       ├── lancedb/             # LanceDB 向量数据库
 │       ├── bm25/                # BM25 倒排索引分片
 │       ├── chunks_meta/         # 文档块元数据
 │       ├── chunks_staging/      # 分块中间存储
 │       ├── parents/             # 父子文档关系
+│       ├── index_manifest.json  # 索引版本清单（Spec 026）
 │       └── struct_kb.db         # SQLite 结构化知识库
 ├── test/
 │   ├── *.test.ts                # 单元测试（vitest）
