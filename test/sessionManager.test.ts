@@ -23,6 +23,20 @@ import {
   getActiveSessionCount,
   clearAllSessions,
 } from '@/lib/sessionManager';
+import type { DocChunk, SearchResult } from '@/lib/types';
+
+function makeChunk(id: string): DocChunk {
+  return {
+    id,
+    docId: `doc_${id}`,
+    docTitle: 'Test',
+    docPath: `Raw/doc_${id}.md`,
+    chunkIndex: 0,
+    content: 'test',
+    metadata: {},
+    wikiLinks: [],
+  };
+}
 
 describe('sessionManager', () => {
   beforeEach(() => {
@@ -111,8 +125,8 @@ describe('sessionManager', () => {
   describe('saveLastSearchResults / getLastSearchResults', () => {
     it('应保存和获取搜索结果', () => {
       const session = createSession();
-      const mockResults = [
-        { chunk: { id: '1', content: 'test', docTitle: 'Test' } as any, score: 0.9, source: 'hybrid' as const, highlight: '**test**' },
+      const mockResults: SearchResult[] = [
+        { chunk: makeChunk('1'), score: 0.9, scores: { rrf: 0.0328 }, source: 'hybrid', highlight: '**test**' },
       ];
 
       saveLastSearchResults(session.id, '微服务', mockResults, 'rrf');
@@ -121,6 +135,26 @@ describe('sessionManager', () => {
       expect(saved.query).toBe('微服务');
       expect(saved.method).toBe('rrf');
       expect(saved.results).toHaveLength(1);
+    });
+
+    it('分数链路（scores）应随检索结果完整往返', () => {
+      const session = createSession();
+      const mockResults: SearchResult[] = [
+        {
+          chunk: makeChunk('1'),
+          score: 0.92,
+          scores: { vector: 0.95, bm25: 10, rrf: 0.0328, rerank: 0.92 },
+          source: 'hybrid',
+        },
+      ];
+
+      saveLastSearchResults(session.id, '查询', mockResults, 'rrf');
+
+      const saved = getLastSearchResults(session.id)!;
+      expect(saved.results[0].scores.vector).toBe(0.95);
+      expect(saved.results[0].scores.bm25).toBe(10);
+      expect(saved.results[0].scores.rrf).toBe(0.0328);
+      expect(saved.results[0].scores.rerank).toBe(0.92);
     });
 
     it('不存在的 session 返回 undefined', () => {

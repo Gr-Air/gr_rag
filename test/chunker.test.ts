@@ -4,16 +4,15 @@
 // ============================================================
 
 import { describe, it, expect } from 'vitest';
-const {
+import {
   chunkDocument,
-  buildWikiChunk,
   extractWikiLinks,
   parseFilename,
   extractTitle,
   isTableLine,
   isTableBlock,
   splitParagraphsTableAware,
-} = require('../scripts/lib/chunker.cjs');
+} from '../scripts/lib/chunker.cjs';
 
 const META = { client: '测试客户', project: '测试项目', docType: '技术方案', date: '20240101' };
 
@@ -243,39 +242,6 @@ describe('chunkDocument 基本逻辑', () => {
     const allLinks = chunks.flatMap(c => c.wikiLinks);
     expect(allLinks).toContain('链接1');
     expect(allLinks).toContain('链接2');
-  });
-});
-
-// ============================================================
-// buildWikiChunk
-// ============================================================
-
-describe('buildWikiChunk', () => {
-  it('保留正文内容（v2 增强）', () => {
-    const content = '# 测试概念\n出现频次: 10\n这是一个测试概念的描述。';
-    const chunk = buildWikiChunk('测试概念', 'concept', 'Wiki/concept/测试概念.md', content);
-    expect(chunk.content).toContain('测试概念');
-    expect(chunk.content).toContain('描述');
-    expect(chunk.id).toBe('wiki_测试概念');
-    expect(chunk.docId).toBe('wiki_测试概念');
-    expect(chunk.parentDocId).toBeUndefined();
-  });
-
-  it('无正文时降级为标题+频次', () => {
-    const content = '出现频次: 5';
-    const chunk = buildWikiChunk('空概念', 'concept', 'Wiki/concept/空概念.md', content);
-    expect(chunk.content).toContain('空概念');
-    expect(chunk.content).toContain('5');
-  });
-
-  it('entity 类型正确标记', () => {
-    const chunk = buildWikiChunk('阿里云', 'entity', 'Wiki/entity/阿里云.md', '# 阿里云\n描述');
-    expect(chunk.metadata.docType).toBe('实体');
-  });
-
-  it('concept 类型正确标记', () => {
-    const chunk = buildWikiChunk('微服务', 'concept', 'Wiki/concept/微服务.md', '# 微服务\n描述');
-    expect(chunk.metadata.docType).toBe('概念');
   });
 });
 

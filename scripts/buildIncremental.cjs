@@ -35,6 +35,7 @@ const {
   writeVectorConfig,
   DATA_DIR,
 } = require('./lib/indexWriter.cjs');
+const { writeManifestAfterBuild } = require('./lib/manifest.cjs');
 
 const STATE_PATH = path.join(DATA_DIR, 'index_state.json');
 const EMBEDDING_DIM = parseInt(process.env.EMBEDDING_DIM || '1024', 10);
@@ -399,7 +400,7 @@ function updateBM25AndMeta(changes, newLanceChunks) {
 async function updateStructDb() {
   console.log('  更新 SQLite 结构化数据库...');
   const { main: buildStructDb } = require('./buildStructDb.cjs');
-  buildStructDb();
+  await buildStructDb(); // 等待完成，确保写 manifest 时 structDb 状态已确定
   console.log('  ✅ SQLite 结构化数据库更新完成');
 }
 
@@ -484,9 +485,19 @@ async function main() {
   console.log('\n[5/5] 保存索引状态...');
   saveState(changes);
 
+  // Step 6: 写入索引 manifest（必需 store 缺一则拒绝写入，保留旧版本）
+  console.log('  写入索引 manifest...');
+  const manifest = writeManifestAfterBuild(DATA_DIR, { buildMode: 'incremental' });
+  if (manifest) {
+    console.log(`  ✅ index_manifest.json 已写入 (v${manifest.indexVersion}, 构建于 ${manifest.builtAt})`);
+  } else {
+    console.error('  ❌ 必需 store 存在缺失，manifest 未写入（保留旧版本）');
+  }
+
   console.log('\n========================================');
   console.log('  ✅ 增量索引构建完成!');
   console.log('========================================');
+  console.log(`  索引版本: v${manifest ? manifest.indexVersion : '未写入'}`);
   console.log(`  新增 chunk: ${newLanceChunks.length}`);
   console.log(`  总 chunk 数: ${totalChunks}`);
   console.log(`  新增文件: ${changes.added.length}`);

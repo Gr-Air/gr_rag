@@ -27,6 +27,7 @@ const {
   writeVectorConfig,
   DATA_DIR,
 } = require('./lib/indexWriter.cjs');
+const { writeManifestAfterBuild } = require('./lib/manifest.cjs');
 
 const ROOT = path.join(__dirname, '..', '..');
 const RAW_DIR = path.join(ROOT, 'Raw');
@@ -199,9 +200,11 @@ async function main() {
 
   // ===== 阶段4：构建结构化数据库 =====
   console.log('[4/4] 构建结构化数据库（概念/实体 → 文档关联）...');
+  let structDbOk = false;
   try {
     const { main: buildStructDb } = require('./buildStructDb.cjs');
-    buildStructDb();
+    await buildStructDb(); // 等待完成，确保写 manifest 时 structDb 状态已确定
+    structDbOk = true;
   } catch (err) {
     console.warn('  ⚠️ 结构化数据库构建失败（不影响核心检索）:', err.message);
     console.warn('  可单独运行: node scripts/buildStructDb.cjs');
@@ -217,6 +220,15 @@ async function main() {
   fs.writeFileSync(path.join(DATA_DIR, 'index_state.json'), JSON.stringify(indexState, null, 2));
   console.log(`  ✅ 增量状态快照已保存: ${Object.keys(indexState).length} 个文件`);
 
+  // ===== 写入索引 manifest（所有必需 store 缺一则拒绝写入，保留旧版本） =====
+  console.log('\n  写入索引 manifest...');
+  const manifest = writeManifestAfterBuild(DATA_DIR, { buildMode: 'full' });
+  if (manifest) {
+    console.log(`  ✅ index_manifest.json 已写入 (v${manifest.indexVersion}, 构建于 ${manifest.builtAt})`);
+  } else {
+    console.error('  ❌ 必需 store 存在缺失，manifest 未写入（保留旧版本）');
+  }
+
   console.log('\n========================================');
   console.log('  ✅ 全部索引构建完成! (LanceDB)');
   console.log('========================================');
@@ -226,6 +238,7 @@ async function main() {
   console.log(`  BM25 词项: ${invIndex.size}`);
   console.log(`  LanceDB 路径: src/data/lancedb/`);
   console.log(`  增量状态: src/data/index_state.json`);
+  console.log(`  索引版本: src/data/index_manifest.json (v${manifest ? manifest.indexVersion : '未写入'})`);
   console.log('========================================');
 }
 

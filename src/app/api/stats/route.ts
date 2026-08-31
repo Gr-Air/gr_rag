@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getWikiStats } from '@/lib/parser';
-import { isIndexReady, isStructDbReady } from '@/lib/indexManager';
+import { isIndexReady, isStructDbReady, getIndexManifest } from '@/lib/indexManager';
 
 export async function GET() {
   try {
     const stats = getWikiStats();
     const indexStatus = isIndexReady();
     const structDbStatus = isStructDbReady();
+    const manifest = getIndexManifest();
 
     let structStats = null;
     if (structDbStatus) {
@@ -21,6 +22,9 @@ export async function GET() {
       indexReady: indexStatus,
       structDbReady: structDbStatus,
       structStats,
+      indexVersion: manifest?.indexVersion ?? null,
+      indexBuiltAt: manifest?.builtAt ?? null,
+      indexBuildMode: manifest?.buildMode ?? null,
     });
   } catch (err: any) {
     console.error('[API] 获取统计失败:', err);

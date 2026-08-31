@@ -48,15 +48,46 @@ export interface WikiEntry {
 }
 
 /** 检索来源类型 */
-export type SearchSource = 'vector' | 'bm25' | 'rrf' | 'entity';
+export type SearchSource = 'vector' | 'bm25' | 'rrf' | 'entity' | 'hybrid';
 
 /** 检索方法 */
 export type SearchMethod = 'rrf' | 'entity';
 
-/** 搜索结果 */
+/**
+ * 检索管线中间结果：chunkId + 分数链路（各阶段只追加，不覆盖）
+ * 追溯链路：vector/bm25 原始分 → rrf 融合分（含实体加成）→ rerank 相关性分
+ */
+export interface RetrievalHit {
+  chunkId: string;
+  /** 组装阶段批量附上（getChunksByIds 一次取回） */
+  chunk?: DocChunk;
+  scores: {
+    /** 向量相似度原始分 */
+    vector?: number;
+    /** BM25 原始分 */
+    bm25?: number;
+    /** RRF 融合分（含实体加成后的最终值） */
+    rrf?: number;
+    /** rerank 模型相关性分 */
+    rerank?: number;
+    /** 结构化检索命中分（词条频次，仅 StructRetriever 输出，Spec 029） */
+    struct?: number;
+  };
+  ranks: {
+    /** 1-based；被实体过滤的向量结果此字段缺省（不贡献 RRF） */
+    vector?: number;
+    bm25?: number;
+  };
+  source: SearchSource;
+}
+
+/** 搜索结果（最终展示态：score 为归一化最终分，scores 保留完整链路供追溯/评估） */
 export interface SearchResult {
   chunk: DocChunk;
+  /** 最终分：rerank 路径下为 rerank 相关性分，否则为归一化 RRF 分 */
   score: number;
+  /** 完整分数链路（vector/bm25/rrf/rerank），调试与 eval 用 */
+  scores: RetrievalHit['scores'];
   source: SearchSource;
   highlight?: string;
 }

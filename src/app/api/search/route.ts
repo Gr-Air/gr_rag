@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { hybridSearch } from '@/lib/hybridSearch';
 import { isIndexReady } from '@/lib/indexManager';
-import { extractEntityKeywords, routedSearch } from '@/lib/entityRouter';
+import { routedSearch } from '@/lib/entityRouter';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -38,6 +37,7 @@ export async function GET(req: NextRequest) {
         content: r.chunk.content.slice(0, 500),
         metadata: r.chunk.metadata,
         score: r.score,
+        scores: r.scores ?? {},
         source: r.source,
         highlight: r.highlight,
       })),

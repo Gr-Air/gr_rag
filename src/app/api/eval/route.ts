@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { ragChatStream } from '@/lib/ragEngine';
-import { hybridSearch } from '@/lib/hybridSearch';
+import { hybridSearch } from '@/lib/search';
 import { isIndexReady } from '@/lib/indexManager';
 import { smartRewrite } from '@/lib/queryRewriter';
 import { executeStructuredQuery, getKnownEntityNames, isStructDbReady } from '@/lib/structSearchEngine';
@@ -170,6 +170,11 @@ export async function POST(req: NextRequest) {
       searchMethod,
       numResults: finalNumResults,
       matchedEntities: matched,
+      // 逐条分数链路（score/scores 与 contexts 一一对应），供评估追溯 RRF→rerank 打分过程
+      resultScores: finalResults.slice(0, topK).map(r => ({
+        score: r.score,
+        scores: r.scores ?? {},
+      })),
     }), {
       headers: { 'Content-Type': 'application/json' },
     });

@@ -4,10 +4,10 @@
 // 支持多轮对话和上下文压缩
 // ============================================================
 
-import { hybridSearch } from './hybridSearch';
+import { hybridSearch } from './search';
 import { SearchResult } from './types';
 import OpenAI from 'openai';
-import { rerank } from './reranker';
+import { getReranker } from './search/rerankers';
 import { PromptTemplate } from './promptTemplate';
 
 /** 提示词模板实例（复用） */
@@ -118,7 +118,7 @@ export async function* ragChatStream(
   let promptResults = searchResults;
   if (searchResults.length > 5) {
     try {
-      const rerankedResults = await rerank(query, searchResults, 5);
+      const rerankedResults = await getReranker().rerank({ query }, searchResults, 5);
       if (rerankedResults.length > 0) {
         console.log(`[RAG] Rerank 重排序: ${searchResults.length} → ${rerankedResults.length} 个文档块（仅影响 LLM prompt）`);
         promptResults = rerankedResults;

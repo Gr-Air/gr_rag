@@ -30,6 +30,7 @@ const CHUNKS_META_DIR = path.join(__dirname, '..', 'src', 'data', 'chunks_meta')
 require('./lib/envLoader.cjs').loadEnv();
 
 const { extractEntitiesFromChunk, generateEntityDefinition, isEntityExtractorAvailable } = require('./lib/entityExtractor.cjs');
+const { updateStructDbEntry } = require('./lib/manifest.cjs');
 
 // ============================================================
 // 1. 解析 Wiki 词条（概念 + 实体）
@@ -430,6 +431,14 @@ async function main() {
     console.log(`  ✅ 词条: ${stats.totalEntries} (概念${stats.totalConcepts}/实体${stats.totalEntities})`);
     console.log(`  ✅ 来源分布: Wiki ${stats.wikiEntries} / LLM ${stats.llmEntries}`);
     console.log(`  ✅ 关联边: ${stats.totalRelations}\n`);
+  }
+
+  // 更新 manifest 中的 structDb 条目（manifest 不存在时创建最小 manifest）
+  const manifest = updateStructDbEntry(path.join(__dirname, '..', 'src', 'data'));
+  if (manifest) {
+    console.log(`  ✅ manifest 已更新 (v${manifest.indexVersion})`);
+  } else {
+    console.warn('  ⚠️ struct_kb.db 未找到，manifest 未更新');
   }
 
   console.log('========================================');

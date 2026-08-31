@@ -10,7 +10,7 @@
 import fs from 'fs';
 import path from 'path';
 import { DocChunk, SearchResult } from './types';
-import { hybridSearch } from './hybridSearch';
+import { hybridSearch } from './search';
 
 // ============================================================
 // 实体关键字加载（从 SQLite 加载，按频次排序）
@@ -247,6 +247,7 @@ async function entityRecallWithContext(
       results.push({
         chunk,
         score: sr.entry.frequency / 500,
+        scores: {},
         source: 'entity',
         highlight,
       });
@@ -365,6 +366,7 @@ function entityRecall(
     results.push({
       chunk,
       score: info.score / matchedKeywords.length,
+      scores: {},
       source: 'entity',
       highlight,
     });

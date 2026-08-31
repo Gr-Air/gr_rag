@@ -86,7 +86,7 @@ RRF(d) = Σ 1/(k + rank_i(d))，k = 60
 - **流式输出**（SSE），实时显示生成进度
 - **实体文档增强**：结构化文档内容优先于语义检索结果
 - **多轮对话**：基于 session 管理上下文，支持追问、指代消解
-- **语义缓存**：非追问查询的改写结果缓存到 Redis，加速重复查询
+- **检索结果缓存**：进程内 LRU 语义缓存（Spec 030），缓存 hybridSearch 输出的 `SearchResult[]`，命中时跳过检索直接进入 Rerank+LLM；kbVersion + policyVersion 感知，索引重建自动失效
 
 ---
 
@@ -98,6 +98,16 @@ RRF(d) = Σ 1/(k + rank_i(d))，k = 60
 |------|---------|---------|------|
 | entity | 查询匹配到实体词条 | SQLite struct_kb.db → Raw 全文/片段 | 精确匹配，全量注入 |
 | rrf | 无实体命中 | LanceDB(1036) + BM25(1036) → docType 过滤 → Rerank top5 | 语义理解，docType 收窄范围 |
+
+### 检索管线接口化（Spec 029）
+
+`src/lib/search/` 将检索流程抽象为三个接口，管线组装固定在 `pipeline.ts`：
+
+- **Retriever**：`VectorRetriever` / `BM25Retriever` / `StructRetriever`，统一 `search(ctx, topN) → RetrievalHit[]`
+- **Fusion**：`RRFFusion` 实现 RRF 融合
+- **Reranker**：`QwenReranker`（核心）/ `NoopReranker`（降级），按 API key 自动选择
+
+`RetrievalContext` 贯穿管线，携带 `matchedKeywords` / `filteredChunkIds` 等域上下文，避免核心算法硬编码。
 
 ### 表格感知分块
 
@@ -121,6 +131,7 @@ RRF(d) = Σ 1/(k + rank_i(d))，k = 60
 | BM25 倒排索引 | 分词后的词项→文档映射（1036 chunk） | BM25 检索 |
 | SQLite `struct_kb.db` | 实体/概念 → chunk 关联（3729 词条，32951 关联边） | 实体查询 |
 | chunks_meta | 文档块元数据（1036 条，仅 Raw 文档） | 上下文提取 |
+| `index_manifest.json` | 索引版本 + builtAt + gitCommit（Spec 026） | 跨索引一致性 + 缓存失效感知 |
 
 **Wiki 文档特殊处理**：`Wiki/concept/` 和 `Wiki/entity/` 目录下的 3853 个词条不再生成 chunk，Wiki 词条内容通过文件系统直接加载（`entityRouter.ts` 的 `fs.readFileSync`），用于实体文档增强。
 
@@ -137,7 +148,6 @@ npm install
 npm run index:full
 # 或使用流水线方式（推荐）
 node scripts/pipeline/clean-and-chunk.cjs       # Stage 1: 清洗 + 分块
-node scripts/pipeline/summarize-chunks.cjs      # Stage 1.5: LLM 摘要（可选）
 node scripts/pipeline/build-from-staging.cjs    # Stage 2: 向量化 + BM25 + SQLite
 
 # 3. 启动开发服务器
@@ -217,7 +227,6 @@ llm-wiki/
 ├── scripts/
 │   ├── pipeline/                # 流水线脚本
 │   │   ├── clean-and-chunk.cjs  #   Stage 1: 文档清洗 + 表格感知分块
-│   │   ├── summarize-chunks.cjs #   Stage 1.5: LLM chunk 摘要生成
 │   │   ├── build-from-staging.cjs # Stage 2: 向量化 + BM25 + SQLite
 │   │   ├── extract-entities.cjs #   实体提取
 │   │   ├── link-entities.cjs    #   实体链接
@@ -235,7 +244,6 @@ llm-wiki/
 │   │   ├── linker.cjs           #   实体链接
 │   │   ├── scanner.cjs          #   文件扫描器
 │   │   ├── staging.cjs          #   中间存储管理
-│   │   ├── summarizer.cjs       #   LLM 摘要模块
 │   │   ├── tokenizer.cjs        #   分词器（jieba + 业务词典）
 │   │   └── wikiWriter.cjs       #   Wiki 词条写入
 │   ├── buildIndex.cjs           # 全量索引构建
@@ -254,22 +262,26 @@ llm-wiki/
 │   │       ├── stats/route.ts   # 知识库统计 API
 │   │       └── docs/list/       # 文档列表 API
 │   ├── lib/
-│   │   ├── types.ts             # 统一类型定义
+│   │   ├── types.ts             # 统一类型定义（RetrievalHit / SearchResult）
 │   │   ├── tokenizer.ts         # jieba 分词 + 业务自定义词典
 │   │   ├── embedding.ts         # DashScope Embedding API
 │   │   ├── vectorEngine.ts      # LanceDB 向量检索引擎
 │   │   ├── bm25Engine.ts        # BM25 倒排索引引擎
-│   │   ├── hybridSearch.ts      # 混合检索 + RRF 融合
+│   │   ├── search/              # 混合检索模块（Spec 028-029 拆分）
+│   │   │   ├── types.ts         #   Retriever / Fusion / Reranker 接口
+│   │   │   ├── pipeline.ts      #   固定管线组装（Vector+BM25 → RRF → 组装）
+│   │   │   ├── fusion.ts        #   RRF 融合实现
+│   │   │   ├── queryPolicy.ts   #   宽泛查询识别 + POLICY_VERSION
+│   │   │   ├── retrievers/      #   VectorRetriever / BM25Retriever / StructRetriever
+│   │   │   └── rerankers/       #   QwenReranker / NoopReranker
 │   │   ├── entityRouter.ts      # 实体路由（关键字提取 + 结构化查询）
 │   │   ├── structSearchEngine.ts # SQLite 结构化检索引擎
 │   │   ├── queryRewriter.ts     # LLM 查询改写 + 实体提取
-│   │   ├── smartRouter.ts       # 兼容层（已迁移到 queryRewriter）
 │   │   ├── promptTemplate.ts    # 多场景提示词模板管理
 │   │   ├── ragEngine.ts         # RAG 生成引擎（OpenAI 兼容 API）
-│   │   ├── reranker.ts          # 语义重排序
-│   │   ├── ragCache.ts          # 查询结果缓存
+│   │   ├── searchCache.ts       # 检索结果缓存（进程内 LRU 语义缓存）
 │   │   ├── parser.ts            # Markdown 文档解析器（语义分块）
-│   │   ├── indexManager.ts      # 索引管理器
+│   │   ├── indexManager.ts      # 索引管理器（含 index_manifest 版本管理）
 │   │   └── sessionManager.ts    # 多轮对话会话管理
 │   └── data/                    # 预构建索引数据（git 追踪）
 │       ├── lancedb/             # LanceDB 向量数据库
@@ -303,4 +315,4 @@ llm-wiki/
 - **向量数据库**: LanceDB（本地文件存储，支持增量索引）
 - **结构化数据**: SQLite（3729 词条 → 32951 关联边）
 - **评测**: RAGAS（Faithfulness / Context Recall / Context Precision / Answer Relevancy / Answer Correctness / Conciseness / Source Citation）
-- **测试**: Vitest（160 个测试用例）
+- **测试**: Vitest（205 个测试用例）

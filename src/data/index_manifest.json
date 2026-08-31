@@ -1,0 +1,42 @@
+{
+  "indexVersion": 1,
+  "pipelineVersion": "1.1.0",
+  "gitCommit": "2670391",
+  "builtAt": "2026-08-31T05:28:08.464Z",
+  "buildMode": "full",
+  "stores": {
+    "lancedb": {
+      "ready": true,
+      "detail": {
+        "totalChunks": 1036,
+        "dim": 1024
+      }
+    },
+    "bm25": {
+      "ready": true,
+      "detail": {
+        "docCount": 1036,
+        "totalShards": 2
+      }
+    },
+    "chunksMeta": {
+      "ready": true,
+      "detail": {
+        "totalChunks": 1036,
+        "totalShards": 3
+      }
+    },
+    "parents": {
+      "ready": true,
+      "detail": null
+    },
+    "structDb": {
+      "ready": true,
+      "detail": null
+    }
+  },
+  "stats": {
+    "totalDocs": 3963,
+    "totalChunks": 1036
+  }
+}

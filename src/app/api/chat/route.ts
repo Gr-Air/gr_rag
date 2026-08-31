@@ -2,12 +2,14 @@ import { NextRequest } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { ragChatStream } from '@/lib/ragEngine';
-import { hybridSearch } from '@/lib/hybridSearch';
+import { hybridSearch } from '@/lib/search';
 import { isIndexReady } from '@/lib/indexManager';
 import { smartRewrite } from '@/lib/queryRewriter';
 import { executeStructuredQuery } from '@/lib/structSearchEngine';
 import { getQueryEmbedding } from '@/lib/embedding';
-import { searchCache, saveCache, initCache } from '@/lib/ragCache';
+import { searchCache, saveCache } from '@/lib/searchCache';
+import { POLICY_VERSION } from '@/lib/search/queryPolicy';
+import { prewarmQueryEmbedding } from '@/lib/vectorEngine';
 
 import type { SearchResult } from '@/lib/types';
 import {
@@ -20,8 +22,6 @@ import {
   compressConversation,
 } from '@/lib/sessionManager';
 import { loadAllChunks } from '@/lib/entityRouter';
-
-initCache().catch(() => {});
 
 /**
  * 根据文档类型过滤 chunk ID 列表
@@ -93,50 +93,21 @@ export async function POST(req: NextRequest) {
           ? routeDecision.isFollowUp
           : isFollowUpQuery(trimmedQuery); // fallback: 本地硬编码追问检测
 
-        // 0.5. 缓存检查：非追问且有改写结果时查缓存
-        let cachedResult = null;
+        // 0.5. 检索结果缓存检查（Spec 030：非追问 && LLM 改写 && 非实体路径）
+        //   缓存对象：hybridSearch 输出的 SearchResult[]（pre-rerank）
+        //   命中后：跳过 hybridSearch，仍执行 rerank + LLM（保持模型相关性）
+        let cachedResults: SearchResult[] | null = null;
+        let queryEmbedding: number[] | null = null;
         if (!isFollowUp && rewriteResult.method === 'llm') {
           try {
-            const queryEmbedding = await getQueryEmbedding(rewrittenQuery);
-            cachedResult = await searchCache(queryEmbedding);
+            queryEmbedding = await getQueryEmbedding(rewrittenQuery);
+            cachedResults = searchCache(rewrittenQuery, queryEmbedding, {
+              entities: matched,
+              policyVersion: POLICY_VERSION,
+            });
           } catch {
-            // embedding 生成失败或 Redis 不可用，跳过缓存
+            // embedding 生成失败，跳过缓存
           }
-        }
-
-        // 缓存命中时快速返回
-        if (cachedResult) {
-          console.log(`[Cache] 命中语义缓存: "${rewrittenQuery.slice(0, 30)}..."`);
-          addMessage(session.id, 'assistant', cachedResult.answer);
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                type: 'method',
-                method: 'cache' as const,
-                cached: true,
-              })}\n\n`
-            )
-          );
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                type: 'context',
-                cached: true,
-              })}\n\n`
-            )
-          );
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: 'token', content: cachedResult.answer })}\n\n`
-            )
-          );
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: 'done', sessionId: session.id, cached: true })}\n\n`
-            )
-          );
-          controller.close();
-          return;
         }
 
         // 追问时补充上下文
@@ -166,16 +137,34 @@ export async function POST(req: NextRequest) {
 
         // 如果实体关联无结果，降级为语义检索（使用改写后的 query）
         if (!entityDocsContent) {
-          const searchQuery = rewriteResult.method === 'llm' ? rewrittenQuery : enrichedQuery;
-          console.log(`[Chat] 无实体关联结果，降级为语义检索（向量+BM25），query="${searchQuery.slice(0, 50)}"`);
-          // 如果有 LLM 推荐的文档类型，先过滤 chunk 再检索
-          const filteredChunkIds = rewriteResult.relevantDocTypes?.length > 0
-            ? filterChunksByDocTypes(rewriteResult.relevantDocTypes)
-            : null;
-          results = await hybridSearch(searchQuery, topK, 20, 20, {
-            matchedKeywords: matched.length > 0 ? matched : undefined,
-            filteredChunkIds: filteredChunkIds ?? undefined,
-          });
+          if (cachedResults) {
+            // 缓存命中：跳过 hybridSearch，直接用缓存结果
+            console.log(`[Chat] 检索缓存命中，跳过 hybridSearch`);
+            results = cachedResults;
+          } else {
+            const searchQuery = rewriteResult.method === 'llm' ? rewrittenQuery : enrichedQuery;
+            console.log(`[Chat] 无实体关联结果，降级为语义检索（向量+BM25），query="${searchQuery.slice(0, 50)}"`);
+            // 如果有 LLM 推荐的文档类型，先过滤 chunk 再检索
+            const filteredChunkIds = rewriteResult.relevantDocTypes?.length > 0
+              ? filterChunksByDocTypes(rewriteResult.relevantDocTypes)
+              : null;
+            results = await hybridSearch(searchQuery, topK, 20, 20, {
+              matchedKeywords: matched.length > 0 ? matched : undefined,
+              filteredChunkIds: filteredChunkIds ?? undefined,
+            });
+            // 缓存写入（仅 LLM 改写 + 非追问 + 已计算 embedding 时）
+            if (queryEmbedding && rewriteResult.method === 'llm' && !isFollowUp) {
+              saveCache(rewrittenQuery, queryEmbedding, results, {
+                entities: matched,
+                policyVersion: POLICY_VERSION,
+              });
+              // 预热 vectorEngine 的 embedding 缓存，避免 vectorSearch 重复调用 API
+              prewarmQueryEmbedding(
+                rewriteResult.method === 'llm' ? rewrittenQuery : enrichedQuery,
+                queryEmbedding
+              );
+            }
+          }
           searchMethod = 'rrf';
         }
 
@@ -225,6 +214,7 @@ export async function POST(req: NextRequest) {
                     metadata: r.chunk.metadata,
                     source: r.source,
                     score: r.score,
+                    scores: r.scores ?? {},
                     content: r.chunk.content,
                     docPath: r.chunk.docPath,
                   })),
@@ -248,28 +238,6 @@ export async function POST(req: NextRequest) {
             // 保存助手回复
             if (fullAnswer) {
               addMessage(session.id, 'assistant', fullAnswer);
-            }
-
-            // 写入缓存：非追问且有改写结果时缓存
-            if (!isFollowUp && rewriteResult.method === 'llm' && fullAnswer && event.results) {
-              try {
-                const queryEmbedding = await getQueryEmbedding(rewrittenQuery);
-                const contextChunks = event.results.map(r => r.chunk.content) || [];
-                const contextSources = event.results.map(r => 
-                  r.chunk.docPath?.replace(/^Raw\//, '').replace(/\.md$/, '') || r.chunk.docTitle || ''
-                ) || [];
-                await saveCache({
-                  query: rewrittenQuery,
-                  embedding: queryEmbedding,
-                  answer: fullAnswer,
-                  contexts: contextChunks,
-                  sources: contextSources,
-                  timestamp: Date.now(),
-                  topK: topK as number,
-                });
-              } catch {
-                // 缓存写入失败，不影响主流程
-              }
             }
 
             controller.enqueue(

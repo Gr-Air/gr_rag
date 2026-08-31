@@ -55,6 +55,15 @@ async function getTable(): Promise<any> {
 const queryEmbeddingCache: Map<string, number[]> = new Map();
 
 /**
+ * 预热 query embedding 缓存（Spec 030）：
+ * 检索缓存层已为 query 调用过 getQueryEmbedding，这里写入可避免
+ * vectorSearch 未命中时重复调用 embedding API。
+ */
+export function prewarmQueryEmbedding(query: string, embedding: number[]): void {
+  queryEmbeddingCache.set(query, embedding);
+}
+
+/**
  * 向量检索
  *
  * 使用 LanceDB 的 IVF_PQ 索引（或降级为暴力搜索）进行近似最近邻检索
