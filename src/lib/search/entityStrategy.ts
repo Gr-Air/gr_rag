@@ -3,7 +3,7 @@
 // ============================================================
 
 import { DocChunk, RetrievalHit } from '../types';
-import { getChunksByIds } from '../bm25Engine';
+import { getChunkStore } from '../document/chunkStore';
 
 /** 实体匹配度权重（提升包含查询实体的文档优先级）：每个匹配实体增加的额外分数 */
 export const ENTITY_MATCH_WEIGHT = 0.2;
@@ -30,7 +30,7 @@ export function buildVectorEntityFilter(
 
   const vectorResultsBefore = vectorHits.length;
   // 加载 chunks meta 检查向量搜索结果是否包含实体关键字
-  const vectorChunks = getChunksByIds(vectorHits.map(r => r.chunkId));
+  const vectorChunks = getChunkStore().getByIds(vectorHits.map(r => r.chunkId));
   const chunkContentMap = new Map<string, string>();
   vectorChunks.forEach(c => chunkContentMap.set(c.id, c.content));
 

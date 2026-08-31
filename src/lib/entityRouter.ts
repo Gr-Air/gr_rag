@@ -7,10 +7,10 @@
 //   4. 无匹配 → 走向量+BM25 RRF 融合检索
 // ============================================================
 
-import fs from 'fs';
-import path from 'path';
 import { DocChunk, SearchResult } from './types';
 import { hybridSearch } from './search';
+import { getChunkStore } from './document/chunkStore';
+import type { ChunkMeta } from './document/types';
 
 // ============================================================
 // 实体关键字加载（从 SQLite 加载，按频次排序）
@@ -106,26 +106,13 @@ export function extractEntityKeywords(query: string): string[] {
 // 实体召回检索
 // ============================================================
 
-const CHUNKS_META_DIR = path.join(process.cwd(), 'src', 'data', 'chunks_meta');
-
-export function loadAllChunks(): Record<string, {
-  docId: string; docTitle: string; docPath: string;
-  metadata: DocChunk['metadata']; content: string; wikiLinks: string[];
-}> {
-  const configPath = path.join(CHUNKS_META_DIR, 'config.json');
-  if (!fs.existsSync(configPath)) return {};
-
-  const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-  const allChunks: Record<string, any> = {};
-
-  for (let s = 0; s < config.totalShards; s++) {
-    const shardPath = path.join(CHUNKS_META_DIR, `shard_${s}.json`);
-    if (!fs.existsSync(shardPath)) continue;
-    const shard = JSON.parse(fs.readFileSync(shardPath, 'utf-8'));
-    Object.assign(allChunks, shard);
-  }
-
-  return allChunks;
+/**
+ * 加载全部 chunks（委托 ChunkStore，Spec 031）
+ * 保留 Record 签名兼容 chat/route、eval/route 调用方
+ */
+export function loadAllChunks(): Record<string, ChunkMeta> {
+  const map = getChunkStore().getAll();
+  return Object.fromEntries(map);
 }
 
 // 缓存：entity → chunkIds 的倒排索引

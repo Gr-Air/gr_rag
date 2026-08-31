@@ -1,11 +1,12 @@
 // ============================================================
 // 重排器（Spec 029）：QwenReranker（DashScope qwen3-rerank）+ NoopReranker
+// Phase 2：rerank 接收 SearchQuery 而非 RetrievalContext
 // rerank 由 ragEngine 调用侧持有，输入为含 chunk 的最终 SearchResult
 // 召回 10 条 → rerank → 取 top 5
 // ============================================================
 
 import { SearchResult } from '../../types';
-import { RetrievalContext, Reranker } from '../types';
+import type { SearchQuery, Reranker } from '../types';
 
 const RERANK_MODEL = 'qwen3-rerank';
 const RERANK_URL = 'https://dashscope.aliyuncs.com/compatible-api/v1/reranks';
@@ -25,11 +26,10 @@ export class QwenReranker implements Reranker {
   readonly name = 'qwen3-rerank';
 
   async rerank(
-    ctx: RetrievalContext,
+    query: SearchQuery,
     searchResults: SearchResult[],
     topN: number = 5
   ): Promise<SearchResult[]> {
-    const query = ctx.query;
     const apiKey = process.env.DASHSCOPE_API_KEY || '';
 
     if (searchResults.length === 0) return [];
@@ -62,7 +62,7 @@ export class QwenReranker implements Reranker {
         },
         body: JSON.stringify({
           model: RERANK_MODEL,
-          query,
+          query: query.query,
           documents,
           top_n: topN,
         }),
@@ -126,7 +126,7 @@ export class NoopReranker implements Reranker {
   readonly name = 'noop';
 
   async rerank(
-    _ctx: RetrievalContext,
+    _query: SearchQuery,
     searchResults: SearchResult[],
     topN: number = 5
   ): Promise<SearchResult[]> {

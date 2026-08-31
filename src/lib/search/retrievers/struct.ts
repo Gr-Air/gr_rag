@@ -1,19 +1,19 @@
 // ============================================================
 // 结构化检索器：包装 structSearchEngine.executeStructuredQuery
 // 默认管线不启用（启用与否留给 eval 数据决策，见 Spec 029）；
-// 实体名来自 ctx.matchedKeywords，查询异常内部 catch 返回空
+// 实体名来自 options.keywords（检索参数，非实体域知识），查询异常内部 catch 返回空
 // ============================================================
 
 import { RetrievalHit } from '../../types';
-import { Retriever, RetrievalContext } from '../types';
+import type { SearchQuery, RetrievalOptions, Retriever } from '../types';
 import { executeStructuredQuery } from '../../structSearchEngine';
 
 export class StructRetriever implements Retriever {
   readonly name = 'struct' as const;
 
-  async search(ctx: RetrievalContext, topN: number): Promise<RetrievalHit[]> {
+  async search(_query: SearchQuery, options: RetrievalOptions): Promise<RetrievalHit[]> {
     try {
-      const entries = ctx.matchedKeywords ?? [];
+      const entries = options.keywords ?? [];
       if (entries.length === 0) return [];
 
       const results = await executeStructuredQuery(entries);
@@ -33,7 +33,7 @@ export class StructRetriever implements Retriever {
           });
         }
       }
-      return hits.slice(0, topN);
+      return hits.slice(0, options.topN);
     } catch (err) {
       console.error('[StructRetriever] 结构化检索失败:', err);
       return [];

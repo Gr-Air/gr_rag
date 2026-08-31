@@ -12,21 +12,25 @@ vi.mock('@/lib/vectorEngine', () => ({
 }));
 vi.mock('@/lib/bm25Engine', () => ({
   bm25Search: vi.fn(),
-  getChunksByIds: vi.fn(),
   isBM25Ready: vi.fn().mockReturnValue(true),
+}));
+vi.mock('@/lib/document/chunkStore', () => ({
+  getChunkStore: vi.fn(),
 }));
 vi.mock('openai', () => ({ default: vi.fn() }));
 
-import { hybridSearch } from '@/lib/search';
+import { hybridSearch, _resetAssemblerForTest } from '@/lib/search';
 import { rrfFusion } from '@/lib/search/fusion';
 import { isBroadQuery, adjustTopKForBroadQuery, BROAD_QUERY_TOPK } from '@/lib/search/queryPolicy';
 import { vectorSearch } from '@/lib/vectorEngine';
-import { bm25Search, getChunksByIds } from '@/lib/bm25Engine';
+import { bm25Search } from '@/lib/bm25Engine';
+import { getChunkStore } from '@/lib/document/chunkStore';
+import type { ChunkStore } from '@/lib/document/types';
 import type { DocChunk, RetrievalHit } from '@/lib/types';
 
 const mockedVectorSearch = vi.mocked(vectorSearch);
 const mockedBm25Search = vi.mocked(bm25Search);
-const mockedGetChunksByIds = vi.mocked(getChunksByIds);
+const mockedGetChunkStore = vi.mocked(getChunkStore);
 
 function makeChunk(id: string, content: string): DocChunk {
   return {
@@ -251,6 +255,7 @@ describe('rrfFusion', () => {
 describe('hybridSearch 分数链路（spec 027）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetAssemblerForTest();
   });
 
   it('返回值含完整分数链路：vector/bm25/rrf 均可追溯', async () => {
@@ -262,9 +267,10 @@ describe('hybridSearch 分数链路（spec 027）', () => {
       { chunkId: 'docA_0', score: 10 },
       { chunkId: 'docC_0', score: 8 },
     ]);
-    mockedGetChunksByIds.mockImplementation((ids: string[]) =>
-      ids.map(id => makeChunk(id, `${id} 的内容`))
-    );
+    mockedGetChunkStore.mockReturnValue({
+      getByIds: (ids: string[]) => ids.map(id => makeChunk(id, `${id} 的内容`)),
+      getAll: vi.fn(),
+    } as unknown as ChunkStore);
 
     const results = await hybridSearch('测试查询', 5, 20, 20);
 
@@ -296,9 +302,10 @@ describe('hybridSearch 分数链路（spec 027）', () => {
       { chunkId: 'docB_0', score: 0.80 },
     ]);
     mockedBm25Search.mockResolvedValue([]);
-    mockedGetChunksByIds.mockImplementation((ids: string[]) =>
-      ids.map(id => makeChunk(id, id === 'docA_0' ? '徐峰负责的项目文档内容' : '其他无关内容'))
-    );
+    mockedGetChunkStore.mockReturnValue({
+      getByIds: (ids: string[]) => ids.map(id => makeChunk(id, id === 'docA_0' ? '徐峰负责的项目文档内容' : '其他无关内容')),
+      getAll: vi.fn(),
+    } as unknown as ChunkStore);
 
     const results = await hybridSearch('徐峰负责哪些项目', 5, 20, 20, {
       matchedKeywords: ['徐峰'],
@@ -322,10 +329,10 @@ describe('hybridSearch 分数链路（spec 027）', () => {
     mockedBm25Search.mockResolvedValue([
       { chunkId: 'docB_0', score: 9 },
     ]);
-    // docB 不含实体关键词"徐峰" → 向量排名被过滤
-    mockedGetChunksByIds.mockImplementation((ids: string[]) =>
-      ids.map(id => makeChunk(id, id === 'docB_0' ? '无关内容' : '徐峰相关内容'))
-    );
+    mockedGetChunkStore.mockReturnValue({
+      getByIds: (ids: string[]) => ids.map(id => makeChunk(id, id === 'docB_0' ? '无关内容' : '徐峰相关内容')),
+      getAll: vi.fn(),
+    } as unknown as ChunkStore);
 
     const results = await hybridSearch('徐峰的文档', 5, 20, 20, {
       matchedKeywords: ['徐峰'],

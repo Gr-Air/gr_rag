@@ -1,9 +1,10 @@
 // ============================================================
 // RRF (Reciprocal Rank Fusion) 融合（Spec 029：RRFFusion 实现 Fusion 接口）
+// Phase 2：fuse 接收 QueryAnalysis 而非 RetrievalContext（不依赖 query/filter）
 // ============================================================
 
 import { RetrievalHit } from '../types';
-import { Fusion, RetrievalContext } from './types';
+import type { Fusion, QueryAnalysis } from './types';
 import { buildVectorEntityFilter } from './entityStrategy';
 
 /** RRF 平滑参数 */
@@ -12,15 +13,15 @@ export const RRF_K = 60;
 /**
  * RRFFusion：两路召回（向量 + BM25）的 RRF 融合
  *
- * 实体过滤：向量结果中不含 ctx.matchedKeywords 的 chunk，
- * 其向量排名不计入 RRF（策略详见 entityStrategy.ts，参数来源改为 ctx）
+ * 实体过滤：向量结果中不含 analysis.matchedKeywords 的 chunk，
+ * 其向量排名不计入 RRF（策略详见 entityStrategy.ts）
  */
 export class RRFFusion implements Fusion {
   readonly name = 'rrf';
 
-  fuse(hitLists: RetrievalHit[][], ctx: RetrievalContext, topK: number = 10): RetrievalHit[] {
+  fuse(hitLists: RetrievalHit[][], analysis: QueryAnalysis, topK: number = 10): RetrievalHit[] {
     const [vectorHits = [], bm25Hits = []] = hitLists;
-    const vectorEntityFilter = buildVectorEntityFilter(vectorHits, ctx.matchedKeywords);
+    const vectorEntityFilter = buildVectorEntityFilter(vectorHits, analysis.matchedKeywords);
     return rrfFusion(vectorHits, bm25Hits, topK, vectorEntityFilter);
   }
 }

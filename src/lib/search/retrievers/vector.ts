@@ -3,14 +3,14 @@
 // ============================================================
 
 import { RetrievalHit } from '../../types';
-import { Retriever, RetrievalContext } from '../types';
+import type { SearchQuery, RetrievalOptions, Retriever } from '../types';
 import { vectorSearch } from '../../vectorEngine';
 
 export class VectorRetriever implements Retriever {
   readonly name = 'vector' as const;
 
-  async search(ctx: RetrievalContext, topN: number): Promise<RetrievalHit[]> {
-    const results = await vectorSearch(ctx.query, topN);
+  async search(query: SearchQuery, options: RetrievalOptions): Promise<RetrievalHit[]> {
+    const results = await vectorSearch(query.query, options.topN);
     return results.map(r => ({
       chunkId: r.chunkId,
       scores: { vector: r.score },

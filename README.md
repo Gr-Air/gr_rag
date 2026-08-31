@@ -99,15 +99,52 @@ RRF(d) = Σ 1/(k + rank_i(d))，k = 60
 | entity | 查询匹配到实体词条 | SQLite struct_kb.db → Raw 全文/片段 | 精确匹配，全量注入 |
 | rrf | 无实体命中 | LanceDB(1036) + BM25(1036) → docType 过滤 → Rerank top5 | 语义理解，docType 收窄范围 |
 
-### 检索管线接口化（Spec 029）
+### 分层架构（Domain / Application / Infrastructure）
+
+代码按依赖方向分为三层，`src/domain/` 只定义类型与接口，不依赖任何基础设施：
+
+```
+src/domain/                    # Domain 层：纯类型 + 接口（零依赖）
+├── search/types.ts            #   RetrievalHit / SearchResult / SearchQuery / QueryAnalysis
+│                              #   RetrievalFilter / RetrievalOptions / RetrievalRequest
+│                              #   Retriever / Fusion / Reranker 接口
+├── document/types.ts          #   DocChunk / ChunkMeta / ChunkStore 接口
+└── entity/types.ts            #   WikiEntry / EntityMatch / EntityRepository 接口
+
+src/lib/                       # Application + Infrastructure 层
+├── search/                    # 检索管线（编排固定，组件可替换）
+├── document/                  # ChunkStore 实现（JsonChunkStore）
+└── ...                        # 各基础设施引擎
+```
+
+### 检索管线（Spec 029 / 031 / Phase 2 拆分）
 
 `src/lib/search/` 将检索流程抽象为三个接口，管线组装固定在 `pipeline.ts`：
 
-- **Retriever**：`VectorRetriever` / `BM25Retriever` / `StructRetriever`，统一 `search(ctx, topN) → RetrievalHit[]`
-- **Fusion**：`RRFFusion` 实现 RRF 融合
+- **Retriever**：`VectorRetriever` / `BM25Retriever` / `StructRetriever`，统一 `search(query: SearchQuery, options: RetrievalOptions) → RetrievalHit[]`
+- **Fusion**：`RRFFusion` 实现 RRF 融合，接收 `QueryAnalysis`（实体过滤）
 - **Reranker**：`QwenReranker`（核心）/ `NoopReranker`（降级），按 API key 自动选择
 
-`RetrievalContext` 贯穿管线，携带 `matchedKeywords` / `filteredChunkIds` 等域上下文，避免核心算法硬编码。
+管线数据流分两段（Spec 031）：
+
+```
+hybridSearch(query, options)
+  → 内部构建 RetrievalRequest { query: SearchQuery, analysis: QueryAnalysis, filter: RetrievalFilter }
+  → pipeline：[Vector, BM25] 并行召回 → filteredChunkIds 过滤 → RRF 融合 → RetrievalHit[]
+  → assembler：chunk 附着(ChunkStore) → 文档聚合 → 实体加成 → 归一化 → 高亮 → SearchResult[]
+```
+
+Phase 2 将原 `RetrievalContext` 按职责拆分，各组件只接收所需数据：
+
+| 类型 | 职责 | 接收方 |
+|------|------|--------|
+| `SearchQuery` | 纯查询意图 | Retriever / Reranker / Assembler |
+| `QueryAnalysis` | 实体匹配结果（matchedKeywords） | Fusion / Assembler |
+| `RetrievalFilter` | docType 过滤条件（filteredChunkIds） | pipeline 过滤阶段 |
+| `RetrievalOptions` | Retriever 参数（topN / filter / keywords） | Retriever |
+| `RetrievalRequest` | pipeline 聚合请求 | runSearchPipeline |
+
+chunk 读取统一走 `ChunkStore` 接口（`src/lib/document/`），检索引擎（bm25Engine）不再承担 chunk 存储职责。
 
 ### 表格感知分块
 
@@ -250,6 +287,10 @@ llm-wiki/
 │   ├── buildIncremental.cjs     # 增量索引构建
 │   └── buildStructDb.cjs        # 结构化数据库构建
 ├── src/
+│   ├── domain/                  # Domain 层：纯类型 + 接口（零依赖，Phase 1 建立）
+│   │   ├── search/types.ts      #   检索类型 + Retriever/Fusion/Reranker 接口
+│   │   ├── document/types.ts    #   DocChunk / ChunkMeta / ChunkStore 接口
+│   │   └── entity/types.ts      #   WikiEntry / EntityMatch / EntityRepository 接口
 │   ├── app/
 │   │   ├── page.tsx             # 首页仪表盘
 │   │   ├── chat/page.tsx        # AI 问答页（多轮对话 + 流式输出）
@@ -262,15 +303,18 @@ llm-wiki/
 │   │       ├── stats/route.ts   # 知识库统计 API
 │   │       └── docs/list/       # 文档列表 API
 │   ├── lib/
-│   │   ├── types.ts             # 统一类型定义（RetrievalHit / SearchResult）
-│   │   ├── tokenizer.ts         # jieba 分词 + 业务自定义词典
-│   │   ├── embedding.ts         # DashScope Embedding API
-│   │   ├── vectorEngine.ts      # LanceDB 向量检索引擎
-│   │   ├── bm25Engine.ts        # BM25 倒排索引引擎
-│   │   ├── search/              # 混合检索模块（Spec 028-029 拆分）
-│   │   │   ├── types.ts         #   Retriever / Fusion / Reranker 接口
-│   │   │   ├── pipeline.ts      #   固定管线组装（Vector+BM25 → RRF → 组装）
-│   │   │   ├── fusion.ts        #   RRF 融合实现
+│   │   ├── types.ts             # Application/Infrastructure 类型 + domain 类型 re-export
+│   │   ├── document/            # ChunkStore（Spec 031，统一 chunk 读取入口）
+│   │   │   ├── types.ts         #   re-export domain 类型（兼容层）
+│   │   │   └── chunkStore.ts    #   JsonChunkStore 实现
+│   │   ├── search/              # 混合检索模块（Spec 028-031 + Phase 2 拆分）
+│   │   │   ├── types.ts         #   re-export domain 检索类型（兼容层）
+│   │   │   ├── index.ts         #   hybridSearch 入口（构建 RetrievalRequest）
+│   │   │   ├── pipeline.ts      #   固定管线：[Vector+BM25] → 过滤 → RRF → RetrievalHit[]
+│   │   │   ├── assembler.ts     #   组装器：RetrievalHit[] → SearchResult[]
+│   │   │   ├── fusion.ts        #   RRFFusion 实现 + rrfFusion 纯函数
+│   │   │   ├── entityStrategy.ts #  实体过滤标记 + 匹配度加成
+│   │   │   ├── highlight.ts     #   关键词高亮
 │   │   │   ├── queryPolicy.ts   #   宽泛查询识别 + POLICY_VERSION
 │   │   │   ├── retrievers/      #   VectorRetriever / BM25Retriever / StructRetriever
 │   │   │   └── rerankers/       #   QwenReranker / NoopReranker
@@ -280,6 +324,10 @@ llm-wiki/
 │   │   ├── promptTemplate.ts    # 多场景提示词模板管理
 │   │   ├── ragEngine.ts         # RAG 生成引擎（OpenAI 兼容 API）
 │   │   ├── searchCache.ts       # 检索结果缓存（进程内 LRU 语义缓存）
+│   │   ├── tokenizer.ts         # jieba 分词 + 业务自定义词典
+│   │   ├── embedding.ts         # DashScope Embedding API
+│   │   ├── vectorEngine.ts      # LanceDB 向量检索引擎
+│   │   ├── bm25Engine.ts        # BM25 倒排索引引擎
 │   │   ├── parser.ts            # Markdown 文档解析器（语义分块）
 │   │   ├── indexManager.ts      # 索引管理器（含 index_manifest 版本管理）
 │   │   └── sessionManager.ts    # 多轮对话会话管理
@@ -297,8 +345,10 @@ llm-wiki/
 │       ├── test_set.json        #   测试集（20 样本）
 │       └── results/             #   评测报告
 ├── spec/                        # Spec 治理文档
+│   ├── governance/              #   治理模板
 │   ├── planned/                 #   计划中
 │   ├── implemented/             #   已实施
+│   ├── refactor/                #   架构重构基线（architecture-baseline.md）
 │   └── archived/                #   已归档
 └── Raw/ Wiki/                   # 原始文档与 Wiki 词条（位于上级目录）
 ```
@@ -315,4 +365,4 @@ llm-wiki/
 - **向量数据库**: LanceDB（本地文件存储，支持增量索引）
 - **结构化数据**: SQLite（3729 词条 → 32951 关联边）
 - **评测**: RAGAS（Faithfulness / Context Recall / Context Precision / Answer Relevancy / Answer Correctness / Conciseness / Source Citation）
-- **测试**: Vitest（205 个测试用例）
+- **测试**: Vitest（220 个测试用例）

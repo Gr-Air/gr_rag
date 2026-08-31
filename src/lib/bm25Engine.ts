@@ -4,12 +4,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import { DocChunk } from './types';
 import { tokenizeFiltered } from './tokenizer';
 
 const DATA_DIR = path.join(process.cwd(), 'src', 'data');
 const BM25_DIR = path.join(DATA_DIR, 'bm25');
-const CHUNKS_META_DIR = path.join(DATA_DIR, 'chunks_meta');
 
 interface BM25Meta {
   docCount: number;
@@ -42,17 +40,6 @@ function getDocLengths(): Record<string, number> | null {
 /** 加载倒排索引分片 */
 function loadBM25Shard(shardIdx: number): Record<string, Array<{ chunkId: string; tf: number }>> | null {
   const shardPath = path.join(BM25_DIR, `shard_${shardIdx}.json`);
-  if (!fs.existsSync(shardPath)) return null;
-  return JSON.parse(fs.readFileSync(shardPath, 'utf-8'));
-}
-
-/** 加载 chunks 元数据分片 */
-function loadChunksMetaShard(shardIdx: number): Record<string, {
-  docId: string; docTitle: string; docPath: string;
-  metadata: DocChunk['metadata']; content: string; wikiLinks: string[];
-  parentDocId?: string;
-}> | null {
-  const shardPath = path.join(CHUNKS_META_DIR, `shard_${shardIdx}.json`);
   if (!fs.existsSync(shardPath)) return null;
   return JSON.parse(fs.readFileSync(shardPath, 'utf-8'));
 }
@@ -102,38 +89,6 @@ export async function bm25Search(
     .sort((a, b) => b[1] - a[1])
     .slice(0, topK)
     .map(([chunkId, score]) => ({ chunkId, score }));
-}
-
-/** 获取 chunk 内容 */
-export function getChunkById(chunkId: string): DocChunk | undefined {
-  // 遍历所有分片
-  const configPath = path.join(CHUNKS_META_DIR, 'config.json');
-  if (!fs.existsSync(configPath)) return undefined;
-  const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-
-  for (let s = 0; s < config.totalShards; s++) {
-    const shard = loadChunksMetaShard(s);
-    if (shard && shard[chunkId]) {
-      const meta = shard[chunkId];
-      return {
-        id: chunkId,
-        docId: meta.docId,
-        docTitle: meta.docTitle,
-        docPath: meta.docPath,
-        chunkIndex: 0,
-        content: meta.content,
-        metadata: meta.metadata,
-        wikiLinks: meta.wikiLinks || [],
-        parentDocId: meta.parentDocId,
-      };
-    }
-  }
-  return undefined;
-}
-
-/** 批量获取 chunks */
-export function getChunksByIds(chunkIds: string[]): DocChunk[] {
-  return chunkIds.map(id => getChunkById(id)).filter(Boolean) as DocChunk[];
 }
 
 /** 检查 BM25 索引是否就绪 */

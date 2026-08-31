@@ -184,14 +184,9 @@ export function getAllEntryNames(): string[] {
     .map(r => r.name);
 }
 
-export interface KnownEntityInfo {
-  name: string;
-  type: 'concept' | 'entity';
-  category: string;
-  frequency: number;
-  definition: string;
-  source: string;
-}
+// KnownEntityInfo 已迁移到 domain/entity/types（Phase 1）
+export type { KnownEntityInfo } from '@/domain/entity/types';
+import type { KnownEntityInfo } from '@/domain/entity/types';
 
 export function getKnownEntityNames(): KnownEntityInfo[] {
   const db = getDb();
