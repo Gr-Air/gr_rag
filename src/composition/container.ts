@@ -27,7 +27,7 @@ import { VectorRetriever } from '@/infrastructure/search/retrievers/vector';
 import { BM25Retriever } from '@/infrastructure/search/retrievers/bm25';
 import { RRFFusion } from '@/infrastructure/search/fusion';
 import { getReranker } from '@/infrastructure/search/rerankers';
-import { OpenAiLlmClient } from '@/infrastructure/llm/openaiClient';
+import { createLlmClient } from '@/infrastructure/llm/openaiClient';
 import { LruSearchCache } from '@/infrastructure/cache/searchCache';
 import { FsDocumentFileStore } from '@/infrastructure/document/documentFileStore';
 import { kbStatus } from '@/infrastructure/index/kbStatus';
@@ -55,6 +55,9 @@ export interface Container {
   ragChatStream: RagChatStreamFn;
   chatService: ChatService;
   evalService: EvalService;
+
+  // ---- 工厂（Presentation 层按请求配置创建 LlmClient）----
+  createLlmClient: (config: { apiKey: string; baseURL?: string; model: string }) => LlmClient;
 }
 
 function build(): Container {
@@ -66,7 +69,11 @@ function build(): Container {
     // StructRetriever 默认不启用（Spec 029：启用与否留给 eval 数据决策）
   ];
   const fusion = new RRFFusion(chunkStore);
-  const llm = new OpenAiLlmClient();
+  const llm = createLlmClient({
+    apiKey: process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || '',
+    baseURL: process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL,
+    model: process.env.LLM_MODEL || 'gpt-3.5-turbo',
+  });
   const cache = new LruSearchCache();
   const fileStore = new FsDocumentFileStore();
   const structQuery = new SqliteStructQuery();
@@ -131,6 +138,7 @@ function build(): Container {
     ragChatStream,
     chatService,
     evalService,
+    createLlmClient,
   };
 }
 

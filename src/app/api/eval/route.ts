@@ -20,18 +20,22 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: '请提供问题' }), { status: 400 });
   }
 
-  const { kbStatus, evalService } = getContainer();
+  const { kbStatus, evalService, createLlmClient } = getContainer();
   if (!kbStatus.isIndexReady()) {
     return new Response(JSON.stringify({ error: '索引尚未初始化完成' }), { status: 503 });
   }
+
+  const llm = createLlmClient({
+    apiKey: apiKey || process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || '',
+    baseURL: baseURL || process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL,
+    model: model || process.env.LLM_MODEL || 'gpt-3.5-turbo',
+  });
 
   try {
     const result = await evalService.evaluate({
       query,
       topK,
-      apiKey,
-      baseURL,
-      model,
+      llm,
     });
 
     return new Response(JSON.stringify(result), {

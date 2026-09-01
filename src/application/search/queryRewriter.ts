@@ -13,8 +13,13 @@
 // ============================================================
 
 import type { EntityRepository } from '@/domain/entity/types';
+import { KNOWN_DOC_TYPES } from '@/domain/document/types';
 import { extractMatchingKeywords, decomposeEntity } from '@/domain/entity/keywordMatcher';
-import { isReasoningModel, type LlmClient } from '../ports';
+import type { LlmClient } from '../ports';
+import { PromptTemplate } from '../chat/promptTemplate';
+
+/** 提示词模板实例（复用） */
+const promptTemplate = new PromptTemplate();
 
 // ============================================================
 // 类型定义
@@ -50,9 +55,8 @@ export interface FallbackRouteResult {
 }
 
 export interface SmartRewriteOptions {
-  apiKey?: string;
-  baseURL?: string;
-  model?: string;
+  /** 覆盖默认 LlmClient（前端自定义配置时由 route 创建传入） */
+  llm?: LlmClient;
   /** 对话历史中的上一轮 query（用于补全指代） */
   previousQuery?: string;
 }
@@ -67,12 +71,6 @@ export interface SmartRewriteResult {
   /** LLM 推荐的文档类型过滤（仅 LLM 成功时有值） */
   relevantDocTypes: string[];
 }
-
-/** 已知文档类型白名单（校验 LLM 输出） */
-const KNOWN_DOC_TYPES = new Set([
-  '客户项目验收', '技术方案', '技术架构设计', '来往账目', '系统测试报告',
-  '需求规格说明书', '项目人员清单', '项目管理计划', '项目费用结算', '项目进度汇报', '大型台账',
-]);
 
 // ============================================================
 // 降级策略：正则路由判断（LLM 不可用时，纯函数）
@@ -110,94 +108,6 @@ export interface SmartRewriter {
 }
 
 /**
- * 构建 LLM system prompt（动态注入已知实体列表作为参考 + 路由决策指令）
- */
-function buildRewritePrompt(entitiesWithMeta: Array<{ name: string; type: 'concept' | 'entity'; category: string }>): string {
-  // 按 category 字段分组
-  const personEntities = entitiesWithMeta.filter(e => e.category === '人员').map(e => e.name);
-  const clientEntities = entitiesWithMeta.filter(e => e.category === '客户企业').map(e => e.name);
-  const techEntities = entitiesWithMeta.filter(e => e.category === '技术组件').map(e => e.name);
-  const deptEntities = entitiesWithMeta.filter(e => e.category === '部门').map(e => e.name);
-  const conceptEntities = entitiesWithMeta.filter(e => e.type === 'concept').map(e => e.name);
-  const projectEntities = entitiesWithMeta.filter(e => e.category === '项目系统').map(e => e.name);
-
-  // 取代表性样本（避免 prompt 过长）
-  const sample = (arr: string[], max: number) => arr.slice(0, max).join('、');
-
-  return `你是一个知识库查询改写与实体提取助手。你的任务是：
-1. 改写用户的自然语言查询，使其更精准、更适合检索
-2. 从查询中提取结构化的实体关键词
-
-## 知识库包含的实体类型
-
-已知的部分实体（供参考，用户可能使用同义词或简称）：
-- 客户企业：${sample(clientEntities, 15)}
-- 技术组件：${sample(techEntities, 15)}
-- 项目系统：${sample(projectEntities, 10)}
-- 人员：${sample(personEntities, 8)}
-- 部门：${sample(deptEntities, 8)}
-- 概念：${sample(conceptEntities, 10)}
-
-知识库的 index.md 包含以下章节可查询元信息：
-客户列表、文档类型、项目类型、概念索引、实体索引、客户企业、技术组件、项目系统、人员、部门、全部原始文档、知识库概览
-
-## 知识库文档类型
-
-知识库中的文档按以下类型分类（文件名中的 docType 字段）：
-客户项目验收、技术方案、技术架构设计、来往账目、系统测试报告、需求规格说明书、项目人员清单、项目管理计划、项目费用结算、项目进度汇报、大型台账
-
-## 改写规则
-
-1. **补全隐含实体**：如果用户说"上次那个项目"，结合上下文补全为具体项目名
-2. **术语标准化**：将口语化表达转为标准术语（如"钱收回来没"→"回款金额"）
-3. **同义词展开**：将简称/别名展开为知识库中的标准名称
-4. **多实体拆分**：明确区分多个独立实体
-5. **保持简洁**：不要添加原始 query 中没有的信息，不要编造
-
-## 路由决策规则
-
-### isFollowUp（追问检测）
-判断当前 query 是否依赖上一轮对话才能理解。以下情况应为 true：
-- 包含指代词："那个"、"这个"、"它"、"他"、"她"、"这些"
-- 省略追问："那进度呢"、"那人呢"、"那成本呢"
-- 纠错/否定："不对，我说的是..."、"不是这个意思"、"重新查一下"
-- 确认反问："就这些？"、"没了吗？"
-- 展开/继续："详细说说"、"然后呢"、"还有呢"、"继续说"
-- 序号追问："第二个呢"、"第三个怎么样"
-- 比较追问："它和XX比呢"
-
-## 输出格式
-
-严格输出一个 JSON 对象，不要有任何其他内容：
-
-{
-  "rewritten": "改写后的查询语句",
-  "entities": ["实体1", "实体2"],
-  "intent": "fact|list|compare|summary|analysis|other",
-  "relevantDocTypes": ["文档类型1", "文档类型2"],
-  "isFollowUp": true或false,
-  "reason": "改写理由（中文，不超过20字）"
-}
-
-### intent 说明
-- fact: 查询具体事实/数值（如"徐峰负责什么"、"项目有多少人"）
-- list: 列举/统计（如"有哪些项目"、"多少家公司"）
-- compare: 对比分析（如"对比两个方案"）
-- summary: 总结概括（如"总结项目进展"）
-- analysis: 分析评估（如"为什么选择这个架构"）
-- other: 其他
-
-### relevantDocTypes 说明
-根据查询语义，判断哪些文档类型最可能包含答案，从上述文档类型列表中选择1-3个。
-如果查询与具体文档类型无关（如纯概念查询），输出空数组 []。
-例如：
-- "项目验收进度" → ["客户项目验收", "项目进度汇报"]
-- "Redis怎么配置" → ["技术方案", "技术架构设计"]
-- "上月付款了多少" → ["来往账目", "项目费用结算"]
-- "CRM是什么" → []（概念查询，不限定文档类型）`;
-}
-
-/**
  * 创建 Smart Rewriter
  *
  * @param deps - llm（LlmClient Port）+ entityRepo（EntityRepository Port）
@@ -213,17 +123,14 @@ export function createSmartRewriter(deps: {
     query: string,
     options?: SmartRewriteOptions
   ): Promise<(RewrittenQuery & { routeDecision: LlmRouteDecision }) | null> {
-    const apiKey = options?.apiKey || process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || '';
-    const baseURL = options?.baseURL || process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL || '';
-    const model = options?.model || process.env.LLM_MODEL || 'gpt-3.5-turbo';
-
-    if (!apiKey) {
-      console.log('[QueryRewriter] 无 LLM API Key，跳过改写');
+    const clientLlm = options?.llm ?? llm;
+    if (!clientLlm.available) {
+      console.log('[QueryRewriter] 无 LLM，跳过改写');
       return null;
     }
 
     const entitiesWithMeta = entityRepo.getKnownEntities();
-    const systemPrompt = buildRewritePrompt(entitiesWithMeta);
+    const systemPrompt = promptTemplate.buildRewritePrompt(entitiesWithMeta);
     const contextHint = options?.previousQuery
       ? `\n对话历史：用户上一轮问了"${options.previousQuery}"`
       : '';
@@ -233,20 +140,13 @@ export function createSmartRewriter(deps: {
 请改写查询并提取实体，输出 JSON。`;
 
     try {
-      // 推理模型（如 deepseek-r1 等）会将大部分 token 消耗在 reasoning_content 上，
-      // 需要预留足够 token 给最终的 content 输出；同时推理模型不支持 temperature 参数
-      const reasoning = isReasoningModel(model);
-
-      const content = await llm.complete({
-        apiKey,
-        baseURL: baseURL || undefined,
-        model,
+      const content = await clientLlm.complete({
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        // 推理模型不携带 temperature/max_tokens，让模型自然结束
-        ...(reasoning ? {} : { temperature: 0, maxTokens: 300 }),
+        temperature: 0,
+        maxTokens: 300,
       });
 
       if (!content) {

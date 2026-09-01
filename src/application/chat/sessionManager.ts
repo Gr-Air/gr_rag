@@ -217,8 +217,7 @@ export function getConversationContext(sessionId: string): {
  */
 export async function compressConversation(
   sessionId: string,
-  options?: { apiKey?: string; baseURL?: string; model?: string },
-  llm?: LlmClient,
+  llm: LlmClient,
 ): Promise<string | null> {
   const session = sessions.get(sessionId);
   if (!session) return null;
@@ -226,17 +225,8 @@ export async function compressConversation(
   const messageCount = session.messages.length;
   if (messageCount < COMPRESS_THRESHOLD) return null;
 
-  const apiKey = options?.apiKey || process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || '';
-  if (!apiKey) {
-    console.warn('[Session] 无 LLM API Key，跳过对话压缩');
-    return null;
-  }
-
-  const baseURL = options?.baseURL || process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL || '';
-  const model = options?.model || process.env.LLM_MODEL || 'gpt-3.5-turbo';
-
-  if (!llm) {
-    console.warn('[Session] 未注入 LlmClient，跳过对话压缩');
+  if (!llm.available) {
+    console.warn('[Session] 无 LLM，跳过对话压缩');
     return null;
   }
 
@@ -250,9 +240,6 @@ export async function compressConversation(
 
   try {
     const content = await llm.complete({
-      apiKey,
-      baseURL: baseURL || undefined,
-      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `对话历史:\n${conversationText.slice(0, 4000)}` },

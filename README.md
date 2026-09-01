@@ -82,11 +82,12 @@ RRF(d) = Σ 1/(k + rank_i(d))，k = 60
 
 ### ④ RAG 生成层（RAG Engine）
 
-通过 `PromptTemplate` 管理多场景提示词模板（基础问答、追问、对比分析），将检索结果拼入 prompt，调用 LLM 生成回答：
+通过 `PromptTemplate` 管理多场景提示词模板（基础问答、追问、对比分析、查询改写），将检索结果拼入 prompt，调用 LLM 生成回答：
 - **流式输出**（SSE），实时显示生成进度
 - **实体文档增强**：结构化文档内容优先于语义检索结果
 - **多轮对话**：基于 session 管理上下文，支持追问、指代消解
 - **检索结果缓存**：进程内 LRU 语义缓存（Spec 030），缓存 hybridSearch 输出的 `SearchResult[]`，命中时跳过检索直接进入 Rerank+LLM；kbVersion + policyVersion 感知，索引重建自动失效
+- **LLM 降级**（Spec 035）：无 API Key 时 LlmClient 返回 NoopLlmClient，RAG 引擎 yield `no-llm` 事件，前端生成文档汇总展示
 
 ---
 
@@ -117,11 +118,14 @@ src/domain/                     # 纯类型 + 接口（零依赖）
 ├── search/types.ts             #   RetrievalHit / SearchResult / SearchQuery / QueryAnalysis
 │                               #   RetrievalFilter / RetrievalOptions / RetrievalRequest
 │                               #   Retriever / Fusion / Reranker 接口
-├── document/types.ts           #   DocChunk / ChunkMeta / ChunkStore 接口
+├── document/types.ts           #   DocChunk / ChunkMeta / ChunkStore 接口 / KNOWN_DOC_TYPES
 ├── entity/types.ts             #   WikiEntry / EntityRepository / StructQueryPort 接口
+├── llm.ts                      #   isReasoningModel 领域规则（Spec 035）
 └── search/entityStrategy.ts 等  #  纯领域规则（实体过滤/加成、高亮、queryPolicy）
 
 src/application/                # Use Case + 应用层 Port（ports.ts）
+├── ports.ts                    #   LlmClient / EmbeddingPort / SearchCachePort / KbStatusPort 等
+│                               #   LlmClientConfig（Spec 035：配置由 Composition 注入，Application 零 env）
 ├── search/                     #   hybridSearch / pipeline / assembler / entitySearch / queryRewriter
 ├── chat/                       #   chatService / ragEngine / sessionManager / promptTemplate / entityDocs
 └── eval/evalService.ts         #   评测编排
@@ -130,11 +134,14 @@ src/infrastructure/             # Port 实现 + 技术引擎
 ├── search/                     #   retrievers/* / fusion.ts (RRFFusion) / rerankers.ts
 ├── document/                   #   jsonChunkStore.ts / documentFileStore.ts
 ├── struct/                     #   structSearchEngine.ts / entityAdapters.ts
-├── vector|bm25|embedding|llm|cache|index|parser|tokenizer/
+├── llm/openaiClient.ts         #   OpenAiLlmClient + NoopLlmClient + createLlmClient 工厂（Spec 035）
+├── vector|bm25|embedding|cache|index|parser|tokenizer/
 └── ...                         # 各基础设施引擎
 
-src/composition/container.ts    # getContainer()：组装全部实现并注入 Use Case
+src/composition/container.ts    # getContainer()：组装全部实现并注入 Use Case + 暴露 createLlmClient 工厂
 ```
+
+**架构依赖检查**（Spec 034）：`npm run arch:check` 基于 dependency-cruiser 自动检查层间依赖方向，ESLint 规则卡住 Application 层 `process.env` 直接读取。4 条核心规则：domain 不得 import infrastructure/application；application 不得 import infrastructure；presentation 不得直接 import infrastructure。
 
 ### 检索管线（Spec 029 / 031 / Phase 2 拆分）
 
@@ -272,7 +279,7 @@ EMBEDDING_DIM=1024
 
 也可以在 AI 问答页面的设置面板中直接配置。
 
-不配置 LLM 时，AI 问答自动降级为基于检索结果的文档摘要展示。
+不配置 LLM 时，RAG 引擎 yield `no-llm` 事件，前端自动生成基于检索结果的文档汇总展示（Spec 035）。
 
 ---
 
@@ -313,13 +320,15 @@ llm-wiki/
 │   │   │   ├── entityStrategy.ts #  实体过滤标记 + 匹配度加成（纯函数）
 │   │   │   ├── highlight.ts     #   关键词高亮
 │   │   │   └── queryPolicy.ts   #   宽泛查询识别 + POLICY_VERSION
-│   │   ├── document/types.ts    #   DocChunk / ChunkMeta / ChunkStore 接口
-│   │   └── entity/              #   WikiEntry / EntityRepository / StructQueryPort
-│   │       ├── types.ts         #     接口定义
-│   │       ├── keywordMatcher.ts #    贪心最大匹配（字典注入）
-│   │       └── snippets.ts      #     实体片段提取
+│   │   ├── document/types.ts    #   DocChunk / ChunkMeta / ChunkStore 接口 / KNOWN_DOC_TYPES
+│   │   ├── entity/              #   WikiEntry / EntityRepository / StructQueryPort
+│   │   │   ├── types.ts         #     接口定义
+│   │   │   ├── keywordMatcher.ts #    贪心最大匹配（字典注入）
+│   │   │   └── snippets.ts      #     实体片段提取
+│   │   └── llm.ts               #   isReasoningModel 领域规则（Spec 035）
 │   ├── application/             # Application 层：Use Case 编排 + Port 定义（Spec 033）
 │   │   ├── ports.ts             #   LlmClient / EmbeddingPort / SearchCachePort / KbStatusPort 等
+│   │   │                        #   LlmClientConfig（Spec 035：配置由 Composition 注入，零 env）
 │   │   ├── search/              #   hybridSearch / pipeline / assembler / entitySearch / queryRewriter
 │   │   ├── chat/                #   chatService / ragEngine / sessionManager / promptTemplate / entityDocs
 │   │   ├── eval/evalService.ts  #   评测编排
@@ -331,12 +340,12 @@ llm-wiki/
 │   │   ├── vector/vectorEngine.ts    # LanceDB 向量检索引擎
 │   │   ├── bm25/bm25Engine.ts        # BM25 倒排索引引擎
 │   │   ├── embedding/           #   DashScope Embedding API + Port 适配
-│   │   ├── llm/openaiClient.ts  #   LlmClient 实现（OpenAI 兼容 API）
+│   │   ├── llm/openaiClient.ts  #   OpenAiLlmClient + NoopLlmClient + createLlmClient 工厂（Spec 035）
 │   │   ├── cache/searchCache.ts #   检索结果缓存（进程内 LRU 语义缓存）
 │   │   ├── index/               #   indexManager.ts (manifest 版本管理) / kbStatus.ts
 │   │   ├── parser/              #   Markdown 解析器 + kbStats.ts
 │   │   └── tokenizer/           #   jieba 分词 + 业务自定义词典
-│   ├── composition/container.ts # 组装根：getContainer() 实例化 Infrastructure 并注入 Use Case
+│   ├── composition/container.ts # 组装根：getContainer() 实例化 Infrastructure + 暴露 createLlmClient 工厂
 │   ├── app/
 │   │   ├── page.tsx             # 首页仪表盘
 │   │   ├── chat/page.tsx        # AI 问答页（多轮对话 + 流式输出）

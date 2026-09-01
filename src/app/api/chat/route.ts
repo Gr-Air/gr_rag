@@ -22,10 +22,17 @@ export async function POST(req: NextRequest) {
     return new Response('请提供问题', { status: 400 });
   }
 
-  const { kbStatus, chatService } = getContainer();
+  const { kbStatus, chatService, createLlmClient } = getContainer();
   if (!kbStatus.isIndexReady()) {
     return new Response('索引尚未初始化完成，请稍后再试', { status: 503 });
   }
+
+  // 按请求配置创建 LlmClient（无 apiKey 时返回 NoopLlmClient，触发 no-llm 降级）
+  const llm = createLlmClient({
+    apiKey: apiKey || process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || '',
+    baseURL: baseURL || process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL,
+    model: model || process.env.LLM_MODEL || 'gpt-3.5-turbo',
+  });
 
   // 创建 SSE 流
   const encoder = new TextEncoder();
@@ -34,9 +41,7 @@ export async function POST(req: NextRequest) {
       try {
         for await (const event of chatService.chat(query.trim(), {
           topK,
-          apiKey,
-          baseURL,
-          model,
+          llm,
           sessionId,
         })) {
           switch (event.type) {
@@ -80,6 +85,26 @@ export async function POST(req: NextRequest) {
               controller.enqueue(
                 encoder.encode(
                   `data: ${JSON.stringify({ type: 'token', content: event.content })}\n\n`
+                )
+              );
+              break;
+            case 'no-llm':
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: 'no-llm',
+                    results: event.results.map((r: SearchResult) => ({
+                      docTitle: r.chunk.docPath
+                        ? r.chunk.docPath.replace(/^Raw\//, '').replace(/\.md$/, '')
+                        : r.chunk.docTitle,
+                      metadata: r.chunk.metadata,
+                      source: r.source,
+                      score: r.score,
+                      scores: r.scores ?? {},
+                      content: r.chunk.content,
+                      docPath: r.chunk.docPath,
+                    })),
+                  })}\n\n`
                 )
               );
               break;

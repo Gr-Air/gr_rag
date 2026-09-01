@@ -39,8 +39,7 @@ export interface ChunkMeta {
   parentDocId?: string;
 }
 
-/**
- * Chunk 仓储抽象
+/** Chunk 仓储抽象
  * - getByIds：pipeline/assembler 批量附着 chunk 用
  * - getAll：entityRouter 倒排索引 / chat route 上下文用
  * Phase 3 将迁移现有 JsonChunkStore 实现到 infrastructure 并演进为 async 签名
@@ -51,3 +50,9 @@ export interface ChunkStore {
   /** 获取全部 chunks（Map<chunkId, ChunkMeta>） */
   getAll(): Map<string, ChunkMeta>;
 }
+
+/** 已知文档类型白名单（校验 LLM 输出的 relevantDocTypes） */
+export const KNOWN_DOC_TYPES: ReadonlySet<string> = new Set([
+  '客户项目验收', '技术方案', '技术架构设计', '来往账目', '系统测试报告',
+  '需求规格说明书', '项目人员清单', '项目管理计划', '项目费用结算', '项目进度汇报', '大型台账',
+]);

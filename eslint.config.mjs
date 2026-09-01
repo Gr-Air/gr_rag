@@ -20,6 +20,22 @@ const eslintConfig = defineConfig([
       "@typescript-eslint/no-require-imports": "off",
     },
   },
+  // Application 层禁止直接读取 process.env（Spec 034 硬约束）
+  // 配置应由 Composition/Presentation 层注入
+  {
+    files: ["src/application/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "MemberExpression[object.name='process'][property.name='env']",
+          message:
+            "Application 层不得直接读取 process.env，配置应由 Composition/Presentation 层注入（Spec 034）",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

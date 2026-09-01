@@ -17,10 +17,14 @@ export interface LlmMessage {
   content: string;
 }
 
-export interface LlmCompleteRequest {
+/** LLM 客户端配置（由 Composition/Presentation 层从 env 绑定，Application 层不碰） */
+export interface LlmClientConfig {
   apiKey: string;
   baseURL?: string;
   model: string;
+}
+
+export interface LlmCompleteRequest {
   messages: LlmMessage[];
   /** 传 undefined 则不携带该参数（推理模型不兼容 temperature） */
   temperature?: number;
@@ -28,26 +32,20 @@ export interface LlmCompleteRequest {
 }
 
 export interface LlmStreamRequest {
-  apiKey: string;
-  baseURL?: string;
-  model: string;
   messages: LlmMessage[];
   temperature?: number;
 }
 
 /**
  * LLM Client Port
+ * - available：是否可用（无 apiKey 时为 false，调用方据此降级）
  * - complete：一次性补全（query 改写 / 会话压缩），返回 content 或 null
  * - stream：流式补全（RAG 回答），逐段 yield content
  */
 export interface LlmClient {
+  readonly available: boolean;
   complete(req: LlmCompleteRequest): Promise<string | null>;
   stream(req: LlmStreamRequest): AsyncGenerator<string>;
-}
-
-/** 推理模型（如 deepseek-r1）不兼容 temperature 参数，token 预算策略也不同 */
-export function isReasoningModel(model: string): boolean {
-  return model.toLowerCase().includes('reasoning') || model.toLowerCase().includes('deepseek-r1');
 }
 
 // ============================================================

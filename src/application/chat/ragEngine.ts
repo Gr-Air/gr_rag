@@ -11,7 +11,6 @@
 
 import type { SearchResult, Reranker } from '@/domain/search/types';
 import type { LlmClient } from '../ports';
-import { isReasoningModel } from '../ports';
 import type { HybridSearchFn } from '../search/hybridSearch';
 import { PromptTemplate } from './promptTemplate';
 
@@ -20,15 +19,14 @@ const promptTemplate = new PromptTemplate();
 
 /** RAG 流事件 */
 export interface RagChatEvent {
-  type: 'context' | 'token' | 'done' | 'error';
+  type: 'context' | 'token' | 'done' | 'error' | 'no-llm';
   content?: string;
   results?: SearchResult[];
 }
 
 export interface RagChatOptions {
-  apiKey?: string;
-  baseURL?: string;
-  model?: string;
+  /** 覆盖默认 LlmClient（前端自定义配置时由 route 创建传入） */
+  llm?: LlmClient;
   topK?: number;
   /** 预检索结果，如果提供则跳过检索步骤 */
   preSearchResults?: SearchResult[];
@@ -95,83 +93,21 @@ function buildRAGPrompt(
 /**
  * 创建流式 RAG 回答 Use Case
  *
- * @param deps - llm（LlmClient Port）+ rerankerFactory（按需创建 Reranker）+ hybridSearch
+ * @param deps - llm（LlmClient Port，默认实例）+ rerankerFactory（按需创建 Reranker）+ hybridSearch
  */
 export function createRagChatStream(deps: {
   llm: LlmClient;
   rerankerFactory: () => Reranker;
   hybridSearch: HybridSearchFn;
 }): RagChatStreamFn {
-  const { llm, rerankerFactory, hybridSearch } = deps;
-
-  /** 无 LLM 时的降级方案：基于检索结果生成结构化摘要 */
-  async function* noLLMFallback(
-    searchResults: SearchResult[]
-  ): AsyncGenerator<RagChatEvent> {
-    yield {
-      type: 'token',
-      content: '⚠️ 未配置 LLM API Key，以下为基于知识库检索结果的文档汇总：\n\n',
-    };
-
-    // 汇总统计
-    const clients = new Set<string>();
-    const projects = new Set<string>();
-    const docTypes = new Set<string>();
-
-    for (const r of searchResults) {
-      const meta = r.chunk.metadata;
-      if (meta.client) clients.add(meta.client);
-      if (meta.project) projects.add(meta.project);
-      if (meta.docType) docTypes.add(meta.docType);
-    }
-
-    yield {
-      type: 'token',
-      content: `共检索到 **${searchResults.length}** 篇相关文档，涉及 ${clients.size} 个客户、${projects.size} 个项目。\n\n---\n\n`,
-    };
-
-    for (let i = 0; i < searchResults.length; i++) {
-      const r = searchResults[i];
-      const meta = r.chunk.metadata;
-      // 清理 wiki 链接语法，让显示更干净
-      const cleanTitle = r.chunk.docTitle.replace(/\[\[([^\]]+)\]\]/g, '$1');
-      const cleanContent = r.chunk.content.replace(/\[\[([^\]]+)\]\]/g, '$1');
-      // 取前800字符作为摘要
-      const snippet = cleanContent.slice(0, 800).replace(/\n+/g, '\n').trim();
-
-      yield {
-        type: 'token',
-        content: `### 📄 ${cleanTitle}\n`,
-      };
-      const metaSource = [meta.client, meta.project, meta.docType].filter(Boolean).join(' | ') || '知识库';
-      yield {
-        type: 'token',
-        content: `> 来源: ${metaSource} | 相关性: ${(r.score * 100).toFixed(1)}%\n\n`,
-      };
-      yield {
-        type: 'token',
-        content: `${snippet}${cleanContent.length > 800 ? '\n\n*(内容已截断)*' : ''}\n\n`,
-      };
-      if (i < searchResults.length - 1) {
-        yield { type: 'token', content: '---\n\n' };
-      }
-    }
-
-    yield {
-      type: 'token',
-      content: '\n> 💡 **提示**：点击右上角「设置」配置 LLM API Key（兼容 OpenAI API），即可启用 AI 智能问答，由 LLM 基于以上文档内容生成精准回答。',
-    };
-    yield { type: 'done' };
-  }
+  const { llm: defaultLlm, rerankerFactory, hybridSearch } = deps;
 
   return async function* ragChatStream(
     query: string,
     options?: RagChatOptions
   ): AsyncGenerator<RagChatEvent> {
     const topK = options?.topK || 5;
-    const apiKey = options?.apiKey || process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || '';
-    const baseURL = options?.baseURL || process.env.OPENAI_BASE_URL || process.env.LLM_BASE_URL || '';
-    const model = options?.model || process.env.LLM_MODEL || 'gpt-3.5-turbo';
+    const llm = options?.llm ?? defaultLlm;
 
     // Step 1: 检索（如果已有预检索结果则跳过；如果有实体文档内容也跳过）
     let searchResults: SearchResult[];
@@ -225,23 +161,18 @@ export function createRagChatStream(deps: {
       isFollowUp: options?.isFollowUp,
     });
 
-    // Step 3: 调用 LLM 流式输出
-    if (!apiKey) {
-      yield* noLLMFallback(searchResults);
+    // Step 3: 调用 LLM 流式输出（无 LLM 时降级为 no-llm 事件，由前端处理展示）
+    if (!llm.available) {
+      yield { type: 'no-llm', results: searchResults };
       return;
     }
 
     try {
-      // 推理模型不兼容 temperature 参数（LlmClient 实现内部处理）
       const stream = llm.stream({
-        apiKey,
-        baseURL: baseURL || undefined,
-        model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        ...(!isReasoningModel(model) ? { temperature: 0.3 } : {}),
       });
 
       for await (const content of stream) {

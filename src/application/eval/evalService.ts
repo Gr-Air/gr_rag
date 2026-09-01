@@ -17,9 +17,7 @@ import { loadEntityDocsContentForEval, filterChunksByDocTypes } from '../chat/en
 export interface EvalRequest {
   query: string;
   topK?: number;
-  apiKey?: string;
-  baseURL?: string;
-  model?: string;
+  llm?: LlmClient;
 }
 
 export interface EvalResult {
@@ -52,6 +50,7 @@ export function createEvalService(deps: {
   ragChatStream: RagChatStreamFn;
 }): EvalService {
   const {
+    llm: defaultLlm,
     chunkStore,
     structQuery,
     entityRepo,
@@ -90,15 +89,14 @@ export function createEvalService(deps: {
       const {
         query,
         topK = 10,
-        apiKey,
-        baseURL,
-        model,
+        llm,
       } = req;
+      const clientLlm = llm ?? defaultLlm;
 
       const trimmedQuery = query.trim();
 
       const rewriteResult = await smartRewriter.rewrite(trimmedQuery, {
-        apiKey, baseURL, model,
+        llm: clientLlm,
         previousQuery: undefined,
       });
       const matched = rewriteResult.entities;
@@ -138,9 +136,7 @@ export function createEvalService(deps: {
 
       if (results.length > 0 || entityDocsContent) {
         const generator = ragChatStream(trimmedQuery, {
-          apiKey,
-          baseURL,
-          model,
+          llm: clientLlm,
           topK,
           entityDocsContent,
           preSearchResults: results.length > 0 ? results : undefined,

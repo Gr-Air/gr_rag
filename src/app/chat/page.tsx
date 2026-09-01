@@ -128,6 +128,29 @@ function ChatPageContent() {
                       };
                     } else if (data.type === "token") {
                       return { ...msg, content: msg.content + (data.content || "") };
+                    } else if (data.type === "no-llm") {
+                      const results = data.results || [];
+                      const clients = new Set<string>();
+                      const projects = new Set<string>();
+                      for (const r of results) {
+                        if (r.metadata?.client) clients.add(r.metadata.client);
+                        if (r.metadata?.project) projects.add(r.metadata.project);
+                      }
+                      let summary = `⚠️ 未配置 LLM API Key，以下为基于知识库检索结果的文档汇总：\n\n`;
+                      summary += `共检索到 **${results.length}** 篇相关文档，涉及 ${clients.size} 个客户、${projects.size} 个项目。\n\n---\n\n`;
+                      for (let i = 0; i < results.length; i++) {
+                        const r = results[i];
+                        const cleanTitle = (r.docTitle || "").replace(/\[\[([^\]]+)\]\]/g, "$1");
+                        summary += `### 📄 ${cleanTitle}\n`;
+                        const metaSource = [r.metadata?.client, r.metadata?.project, r.metadata?.docType].filter(Boolean).join(" | ");
+                        summary += `> 来源: ${metaSource} | 相关性: ${(r.score * 100).toFixed(1)}%\n\n`;
+                        const cleanContent = (r.content || "").replace(/\[\[([^\]]+)\]\]/g, "$1");
+                        const snippet = cleanContent.slice(0, 800).replace(/\n+/g, "\n").trim();
+                        summary += `${snippet}${cleanContent.length > 800 ? "\n\n*(内容已截断)*" : ""}\n\n`;
+                        if (i < results.length - 1) summary += "---\n\n";
+                      }
+                      summary += "\n> 💡 配置 LLM API Key（设置面板）即可启用 AI 智能问答。";
+                      return { ...msg, context: data.results, content: summary };
                     } else if (data.type === "error") {
                       return { ...msg, content: data.content || "发生错误" };
                     }

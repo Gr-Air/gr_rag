@@ -49,6 +49,7 @@ export type ChatStreamEvent =
   | { type: 'context'; sessionId: string; results: SearchResult[] }
   | { type: 'token'; content?: string }
   | { type: 'error'; content?: string }
+  | { type: 'no-llm'; results: SearchResult[] }
   | { type: 'done'; sessionId: string };
 
 export interface ChatRequestOptions extends SmartRewriteOptions {
@@ -97,10 +98,8 @@ export function createChatService(deps: {
       const {
         topK = 10,
         sessionId,
-        apiKey,
-        baseURL,
-        model,
       } = options ?? {};
+      const clientLlm = options?.llm ?? llm;
 
       // ================================================================
       // 多轮对话：获取或创建会话
@@ -108,7 +107,7 @@ export function createChatService(deps: {
       const session = getOrCreateSession(sessionId);
 
       // 对话压缩（异步触发，不阻塞当前请求）
-      compressConversation(session.id, { apiKey, baseURL, model }, llm).catch(() => {});
+      compressConversation(session.id, clientLlm).catch(() => {});
 
       // 获取对话历史上下文
       const { historyText } = getConversationContext(session.id);
@@ -118,7 +117,7 @@ export function createChatService(deps: {
 
       // 0. Query Rewriting + 统一路由决策（一次 LLM 调用覆盖全部判断）
       const rewriteResult = await smartRewriter.rewrite(query, {
-        apiKey, baseURL, model,
+        llm: clientLlm,
         previousQuery: getLastSearchResults(session.id)?.query,
       });
       const matched = rewriteResult.entities;
@@ -222,10 +221,8 @@ export function createChatService(deps: {
       // 用改写后的 query 或原始 query 调用 RAG
       const finalQuery = rewriteResult.method === 'llm' ? rewrittenQuery : query;
       const generator = ragChatStream(finalQuery, {
+        llm: clientLlm,
         topK,
-        apiKey,
-        baseURL,
-        model,
         preSearchResults: results,
         entityDocsContent,
         conversationContext: historyText || undefined,
@@ -240,6 +237,8 @@ export function createChatService(deps: {
         } else if (event.type === 'token') {
           fullAnswer += event.content || '';
           yield { type: 'token', content: event.content };
+        } else if (event.type === 'no-llm') {
+          yield { type: 'no-llm', results: event.results ?? [] };
         } else if (event.type === 'error') {
           yield { type: 'error', content: event.content };
         } else if (event.type === 'done') {
