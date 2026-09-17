@@ -59,3 +59,8 @@ storage/
 .idea/
 .vscode/
 *.swp
+
+# 知识库/语料数据（本地保留，不入库）
+Raw/
+Wiki/
+docs/
