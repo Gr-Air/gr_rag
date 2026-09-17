@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM-Wiki 系统架构图</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" integrity="sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/" crossorigin="anonymous"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: #020617;
+      min-height: 100vh;
+      padding: 2rem;
+      color: white;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    .header { margin-bottom: 2rem; }
+    .header-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 0.5rem;
+    }
+    .pulse-dot {
+      width: 12px; height: 12px;
+      background: #22d3ee;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; }
+    .subtitle { color: #94a3b8; font-size: 0.875rem; margin-left: 1.75rem; }
+    .diagram-container {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 1rem;
+      border: 1px solid #1e293b;
+      padding: 1.5rem;
+      overflow-x: auto;
+    }
+    svg { width: 100%; min-width: 1200px; display: block; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+    .card {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 0.75rem;
+      border: 1px solid #1e293b;
+      padding: 1.25rem;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .card-dot.cyan { background: #22d3ee; }
+    .card-dot.emerald { background: #34d399; }
+    .card-dot.violet { background: #a78bfa; }
+    .card-dot.amber { background: #fbbf24; }
+    .card-dot.rose { background: #fb7185; }
+    .card-dot.orange { background: #fb923c; }
+    .card h3 { font-size: 0.875rem; font-weight: 600; }
+    .card ul { list-style: none; color: #94a3b8; font-size: 0.75rem; }
+    .card li { margin-bottom: 0.375rem; }
+    .footer { text-align: center; margin-top: 1.5rem; color: #475569; font-size: 0.75rem; }
+
+    .toolbar {
+      display: flex; gap: 0.5rem; margin-left: auto; flex-shrink: 0; align-items: center;
+    }
+    .toolbar-toggle {
+      background: transparent; border: none; color: #475569; cursor: pointer;
+      font-size: 1.25rem; line-height: 1; padding: 0.25rem 0.5rem;
+      border-radius: 0.375rem; transition: color 0.2s, background 0.2s;
+    }
+    .toolbar-toggle:hover { color: #94a3b8; background: rgba(30, 41, 59, 0.5); }
+    .toolbar-actions { display: none; gap: 0.5rem; }
+    .toolbar.expanded .toolbar-actions { display: flex; }
+    .toolbar-actions button {
+      background: rgba(30, 41, 59, 0.8); border: 1px solid #334155;
+      color: #94a3b8; padding: 0.375rem 0.75rem; border-radius: 0.375rem;
+      font-family: inherit; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    .toolbar-actions button:hover {
+      background: rgba(51, 65, 85, 0.8); color: white; border-color: #475569;
+    }
+    @media print {
+      body { background: #020617; padding: 1rem; }
+      .toolbar { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="report-container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-row">
+        <div class="pulse-dot"></div>
+        <h1>LLM-Wiki 系统架构图</h1>
+        <div class="toolbar">
+          <div class="toolbar-actions">
+            <button onclick="copyAsImage(this)">📋 Copy</button>
+            <button onclick="downloadPNG(this)">🖼️ PNG</button>
+            <button onclick="downloadPDF(this)">📄 PDF</button>
+          </div>
+          <button class="toolbar-toggle" onclick="this.parentElement.classList.toggle('expanded')" title="Export options" aria-label="Export options">⋯</button>
+        </div>
+      </div>
+      <p class="subtitle">企业知识库 RAG 系统 — 检索链路 · 索引构建 · 会话管理 · 多套实现并存 | 分析日期 2026-06-08</p>
+    </div>
+
+    <!-- Main Diagram -->
+    <div class="diagram-container">
+      <svg viewBox="0 0 1300 950">
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
+          </marker>
+          <marker id="arrowhead-cyan" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee" />
+          </marker>
+          <marker id="arrowhead-emerald" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#34d399" />
+          </marker>
+          <marker id="arrowhead-violet" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#a78bfa" />
+          </marker>
+          <marker id="arrowhead-rose" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fb7185" />
+          </marker>
+          <marker id="arrowhead-amber" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fbbf24" />
+          </marker>
+          <marker id="arrowhead-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fb923c" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <!-- Background Grid -->
+        <rect width="100%" height="100%" fill="url(#grid)" />
+
+        <!-- =============================================
+             REGION: 运行时服务层
+             ============================================= -->
+        <rect x="20" y="20" width="1260" height="580" rx="12" fill="rgba(34, 211, 238, 0.03)" stroke="#22d3ee" stroke-width="1" stroke-dasharray="8,4"/>
+        <text x="35" y="42" fill="#22d3ee" font-size="11" font-weight="600">运行时服务层 (Next.js App Router)</text>
+
+        <!-- =============================================
+             API 入口层
+             ============================================= -->
+        <rect x="40" y="60" width="580" height="130" rx="8" fill="rgba(8, 51, 68, 0.25)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="55" y="80" fill="#22d3ee" font-size="10" font-weight="600">HTTP API 入口</text>
+
+        <!-- POST /api/chat -->
+        <rect x="55" y="90" width="175" height="45" rx="5" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="142" y="108" fill="white" font-size="10" font-weight="600" text-anchor="middle">POST /api/chat</text>
+        <text x="142" y="124" fill="#94a3b8" font-size="7" text-anchor="middle">chat/route.ts (多轮+RAG)</text>
+
+        <!-- GET /api/search -->
+        <rect x="240" y="90" width="175" height="45" rx="5" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="327" y="108" fill="white" font-size="10" font-weight="600" text-anchor="middle">GET /api/search</text>
+        <text x="327" y="124" fill="#94a3b8" font-size="7" text-anchor="middle">search/route.ts (单轮检索)</text>
+
+        <!-- GET /api/stats -->
+        <rect x="425" y="90" width="175" height="45" rx="5" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="512" y="108" fill="white" font-size="10" font-weight="600" text-anchor="middle">GET /api/stats</text>
+        <text x="512" y="124" fill="#94a3b8" font-size="7" text-anchor="middle">stats/route.ts</text>
+
+        <!-- chat vs search 差异标注 -->
+        <rect x="55" y="145" width="548" height="36" rx="4" fill="rgba(251, 146, 60, 0.08)" stroke="#fb923c" stroke-width="0.8" stroke-dasharray="3,3"/>
+        <text x="330" y="159" fill="#fb923c" font-size="8" text-anchor="middle">⚠ chat 有 LLM Query 改写 + 多轮会话 + 实体文档注入 | search 仅 jieba 分词 + 单轮检索</text>
+        <text x="330" y="173" fill="#fb923c" font-size="7" text-anchor="middle">两条 API 的检索行为不一致 → 可疑行为 5.13</text>
+
+        <!-- =============================================
+             会话管理层
+             ============================================= -->
+        <rect x="40" y="210" width="260" height="95" rx="8" fill="rgba(6, 78, 59, 0.15)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="55" y="230" fill="#34d399" font-size="10" font-weight="600">会话管理 (仅 Chat)</text>
+
+        <rect x="52" y="240" width="236" height="55" rx="5" fill="rgba(6, 78, 59, 0.35)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="170" y="257" fill="white" font-size="10" font-weight="600" text-anchor="middle">sessionManager.ts</text>
+        <text x="170" y="272" fill="#94a3b8" font-size="7" text-anchor="middle">Map&lt;sessionId, ChatSession&gt;</text>
+        <text x="170" y="284" fill="#94a3b8" font-size="7" text-anchor="middle">内存存储 · 30min TTL · 无持久化</text>
+        <text x="170" y="296" fill="#fbbf24" font-size="7" text-anchor="middle">setInterval 5min 清理过期会话</text>
+
+        <!-- 全局缓存区 -->
+        <rect x="320" y="210" width="300" height="95" rx="8" fill="rgba(76, 29, 149, 0.12)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="335" y="230" fill="#a78bfa" font-size="10" font-weight="600">模块级缓存 (进程生命周期)</text>
+
+        <rect x="332" y="240" width="276" height="55" rx="5" fill="rgba(76, 29, 149, 0.3)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="470" y="256" fill="white" font-size="9" font-weight="600" text-anchor="middle">懒加载缓存 · 永不过期</text>
+        <text x="470" y="271" fill="#94a3b8" font-size="7" text-anchor="middle">knownEntitiesCache · parentDocsCache</text>
+        <text x="470" y="284" fill="#94a3b8" font-size="7" text-anchor="middle">entityKeywordsCache · entityInvertedIndex</text>
+        <text x="470" y="297" fill="#fbbf24" font-size="7" text-anchor="middle">⚠ 增量构建后不刷新 → 可疑行为 5.11</text>
+
+        <!-- =============================================
+             Query 改写层
+             ============================================= -->
+        <rect x="40" y="325" width="580" height="95" rx="8" fill="rgba(251, 146, 60, 0.1)" stroke="#fb923c" stroke-width="1.5"/>
+        <text x="55" y="345" fill="#fb923c" font-size="10" font-weight="600">Query 改写 & 路由决策</text>
+
+        <!-- LLM 改写 -->
+        <rect x="55" y="355" width="175" height="55" rx="5" fill="rgba(251, 146, 60, 0.25)" stroke="#fb923c" stroke-width="1.5"/>
+        <text x="142" y="373" fill="white" font-size="9" font-weight="600" text-anchor="middle">smartRewrite</text>
+        <text x="142" y="388" fill="#94a3b8" font-size="7" text-anchor="middle">LLM 改写 + 实体识别</text>
+        <text x="142" y="400" fill="#94a3b8" font-size="7" text-anchor="middle">queryRewriter.ts</text>
+
+        <!-- 降级 -->
+        <rect x="240" y="355" width="175" height="55" rx="5" fill="rgba(251, 146, 60, 0.25)" stroke="#fb923c" stroke-width="1.5"/>
+        <text x="327" y="373" fill="white" font-size="9" font-weight="600" text-anchor="middle">fallbackExtract</text>
+        <text x="327" y="388" fill="#94a3b8" font-size="7" text-anchor="middle">jieba 分词 + 字典匹配</text>
+        <text x="327" y="400" fill="#94a3b8" font-size="7" text-anchor="middle">entityRouter.ts</text>
+
+        <!-- 智能路由 -->
+        <rect x="425" y="355" width="175" height="55" rx="5" fill="rgba(251, 146, 60, 0.25)" stroke="#fb923c" stroke-width="1.5"/>
+        <text x="512" y="373" fill="white" font-size="9" font-weight="600" text-anchor="middle">smartRoute</text>
+        <text x="512" y="388" fill="#94a3b8" font-size="7" text-anchor="middle">LLM 路由判断</text>
+        <text x="512" y="400" fill="#94a3b8" font-size="7" text-anchor="middle">smartRouter.ts</text>
+
+        <!-- 标注 2套实体提取 -->
+        <text x="55" y="419" fill="#fbbf24" font-size="7">⚠ 2套实体提取并存 (LLM vs jieba) | 3条检索路径互斥级联 | chat/search 改写行为不一致</text>
+
+        <!-- =============================================
+             检索核心链路
+             ============================================= -->
+        <rect x="40" y="440" width="1220" height="150" rx="8" fill="rgba(6, 78, 59, 0.08)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="55" y="462" fill="#34d399" font-size="10" font-weight="600">检索核心链路 (RRF 混合检索)</text>
+
+        <!-- 向量检索 -->
+        <rect x="55" y="475" width="180" height="55" rx="5" fill="rgba(6, 78, 59, 0.35)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="145" y="493" fill="white" font-size="9" font-weight="600" text-anchor="middle">vectorSearch</text>
+        <text x="145" y="507" fill="#94a3b8" font-size="7" text-anchor="middle">LanceDB · text-embedding-v4</text>
+        <text x="145" y="520" fill="#94a3b8" font-size="7" text-anchor="middle">DashScope API · dim=1024</text>
+
+        <!-- BM25 检索 -->
+        <rect x="255" y="475" width="180" height="55" rx="5" fill="rgba(6, 78, 59, 0.35)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="345" y="493" fill="white" font-size="9" font-weight="600" text-anchor="middle">bm25Search</text>
+        <text x="345" y="507" fill="#94a3b8" font-size="7" text-anchor="middle">倒排索引 JSON 分片</text>
+        <text x="345" y="520" fill="#94a3b8" font-size="7" text-anchor="middle">bm25Engine.ts</text>
+
+        <!-- RRF 融合 -->
+        <rect x="455" y="475" width="180" height="55" rx="5" fill="rgba(6, 78, 59, 0.45)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="545" y="493" fill="white" font-size="9" font-weight="600" text-anchor="middle">rrfFusion</text>
+        <text x="545" y="507" fill="#94a3b8" font-size="7" text-anchor="middle">k=60 · 向量+BM25 双路</text>
+        <text x="545" y="520" fill="#94a3b8" font-size="7" text-anchor="middle">实体关键词过滤向量侧</text>
+
+        <!-- Reranker 重排 -->
+        <rect x="655" y="475" width="180" height="55" rx="5" fill="rgba(6, 78, 59, 0.35)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="745" y="493" fill="white" font-size="9" font-weight="600" text-anchor="middle">rerank</text>
+        <text x="745" y="507" fill="#94a3b8" font-size="7" text-anchor="middle">qwen3-rerank · DashScope</text>
+        <text x="745" y="520" fill="#94a3b8" font-size="7" text-anchor="middle">Top 5 · 替换RRF分数</text>
+
+        <!-- 上下文扩展 -->
+        <rect x="855" y="475" width="180" height="55" rx="5" fill="rgba(6, 78, 59, 0.35)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="945" y="493" fill="white" font-size="9" font-weight="600" text-anchor="middle">expandToParent</text>
+        <text x="945" y="507" fill="#94a3b8" font-size="7" text-anchor="middle">Small-to-Big 父文档扩展</text>
+        <text x="945" y="520" fill="#94a3b8" font-size="7" text-anchor="middle">adaptiveContextWindow</text>
+
+        <!-- LLM 生成 -->
+        <rect x="1055" y="475" width="185" height="55" rx="5" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="1147" y="493" fill="white" font-size="9" font-weight="600" text-anchor="middle">ragChatStream</text>
+        <text x="1147" y="507" fill="#94a3b8" font-size="7" text-anchor="middle">OpenAI 兼容 API</text>
+        <text x="1147" y="520" fill="#94a3b8" font-size="7" text-anchor="middle">流式 SSE 输出</text>
+
+        <!-- 检索链路箭头 -->
+        <line x1="235" y1="502" x2="253" y2="502" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrowhead-emerald)"/>
+        <line x1="435" y1="502" x2="453" y2="502" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrowhead-emerald)"/>
+        <line x1="635" y1="502" x2="653" y2="502" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrowhead-emerald)"/>
+        <line x1="835" y1="502" x2="853" y2="502" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrowhead-emerald)"/>
+        <line x1="1035" y1="502" x2="1053" y2="502" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrowhead-emerald)"/>
+
+        <!-- 3条检索路径标注 -->
+        <rect x="55" y="540" width="1190" height="40" rx="4" fill="rgba(251, 146, 60, 0.06)" stroke="#fb923c" stroke-width="0.8" stroke-dasharray="3,3"/>
+        <text x="650" y="555" fill="#fb923c" font-size="8" text-anchor="middle">⚠ 3条检索路径互斥级联: ①实体文档注入(loadEntityDocsContent) → ②IndexLookup元信息查询 → ③语义检索(hybridSearch)</text>
+        <text x="650" y="570" fill="#fb923c" font-size="7" text-anchor="middle">smartRoute 失败时可能重复调用 hybridSearch → 可疑行为 5.9</text>
+
+        <!-- =============================================
+             REGION: 数据存储层
+             ============================================= -->
+        <rect x="20" y="620" width="1260" height="165" rx="12" fill="rgba(168, 127, 250, 0.03)" stroke="#a78bfa" stroke-width="1" stroke-dasharray="8,4"/>
+        <text x="35" y="642" fill="#a78bfa" font-size="11" font-weight="600">数据存储层</text>
+
+        <!-- LanceDB -->
+        <rect x="40" y="655" width="230" height="60" rx="6" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="155" y="677" fill="white" font-size="10" font-weight="600" text-anchor="middle">LanceDB</text>
+        <text x="155" y="693" fill="#94a3b8" font-size="8" text-anchor="middle">向量数据库 · src/data/lancedb/</text>
+        <text x="155" y="707" fill="#a78bfa" font-size="7" text-anchor="middle">读: vectorEngine | 写: buildIndex</text>
+
+        <!-- BM25 JSON 分片 -->
+        <rect x="290" y="655" width="230" height="60" rx="6" fill="rgba(76, 29, 149, 0.35)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="405" y="677" fill="white" font-size="10" font-weight="600" text-anchor="middle">BM25 倒排索引</text>
+        <text x="405" y="693" fill="#94a3b8" font-size="8" text-anchor="middle">JSON 分片 · bm25/shard_*.json</text>
+        <text x="405" y="707" fill="#a78bfa" font-size="7" text-anchor="middle">读: bm25Engine | 写: buildIndex</text>
+
+        <!-- chunks_meta -->
+        <rect x="540" y="655" width="230" height="60" rx="6" fill="rgba(76, 29, 149, 0.35)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="655" y="677" fill="white" font-size="10" font-weight="600" text-anchor="middle">Chunks 元数据</text>
+        <text x="655" y="693" fill="#94a3b8" font-size="8" text-anchor="middle">JSON 分片 · chunks_meta/</text>
+        <text x="655" y="707" fill="#a78bfa" font-size="7" text-anchor="middle">读: getChunksByIds | 写: buildIndex</text>
+
+        <!-- parents.json -->
+        <rect x="790" y="655" width="230" height="60" rx="6" fill="rgba(76, 29, 149, 0.35)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="905" y="677" fill="white" font-size="10" font-weight="600" text-anchor="middle">父文档映射</text>
+        <text x="905" y="693" fill="#94a3b8" font-size="8" text-anchor="middle">JSON · parents/parents.json</text>
+        <text x="905" y="707" fill="#a78bfa" font-size="7" text-anchor="middle">读: expandToParent | 写: buildIndex</text>
+
+        <!-- SQLite -->
+        <rect x="1040" y="655" width="220" height="60" rx="6" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="1150" y="677" fill="white" font-size="10" font-weight="600" text-anchor="middle">SQLite</text>
+        <text x="1150" y="693" fill="#94a3b8" font-size="8" text-anchor="middle">struct_kb.db</text>
+        <text x="1150" y="707" fill="#a78bfa" font-size="7" text-anchor="middle">读: structSearchEngine | 写: buildStructDb</text>
+
+        <!-- 文件系统 -->
+        <rect x="40" y="725" width="520" height="50" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="300" y="745" fill="white" font-size="10" font-weight="600" text-anchor="middle">文件系统</text>
+        <text x="300" y="761" fill="#94a3b8" font-size="8" text-anchor="middle">Raw/*.md (原始文档) · Wiki/entity/*.md (实体词条) · Wiki/concept/*.md (概念词条) · Wiki/index.md (元信息索引)</text>
+
+        <!-- index_state -->
+        <rect x="580" y="725" width="230" height="50" rx="6" fill="rgba(251, 191, 36, 0.15)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="695" y="745" fill="white" font-size="10" font-weight="600" text-anchor="middle">index_state.json</text>
+        <text x="695" y="761" fill="#fbbf24" font-size="8" text-anchor="middle">⚠ 全量/增量互相覆盖 · MD5编码风险</text>
+
+        <!-- .env 配置 -->
+        <rect x="830" y="725" width="430" height="50" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="1045" y="745" fill="white" font-size="10" font-weight="600" text-anchor="middle">环境配置 .env</text>
+        <text x="1045" y="761" fill="#94a3b8" font-size="8" text-anchor="middle">OPENAI_API_KEY · DASHSCOPE_API_KEY · LLM_MODEL · EMBEDDING_MODEL · EMBEDDING_DIM</text>
+
+        <!-- =============================================
+             REGION: 离线构建层
+             ============================================= -->
+        <rect x="20" y="805" width="1260" height="120" rx="12" fill="rgba(251, 191, 36, 0.03)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="8,4"/>
+        <text x="35" y="827" fill="#fbbf24" font-size="11" font-weight="600">离线构建层 (CLI 脚本 · 不可在运行时调用)</text>
+
+        <!-- 全量构建 -->
+        <rect x="40" y="840" width="280" height="70" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="180" y="860" fill="white" font-size="10" font-weight="600" text-anchor="middle">buildIndex.cjs</text>
+        <text x="180" y="876" fill="#94a3b8" font-size="8" text-anchor="middle">全量构建 · DROP TABLE 重建</text>
+        <text x="180" y="891" fill="#fbbf24" font-size="7" text-anchor="middle">embedding + LanceDB + BM25 + parents</text>
+        <text x="180" y="904" fill="#fbbf24" font-size="7" text-anchor="middle">⚠ 内嵌分块逻辑(第1套) · 写index_state.json</text>
+
+        <!-- 增量构建 -->
+        <rect x="340" y="840" width="280" height="70" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="480" y="860" fill="white" font-size="10" font-weight="600" text-anchor="middle">buildIncremental.cjs</text>
+        <text x="480" y="876" fill="#94a3b8" font-size="8" text-anchor="middle">增量构建 · MD5 对比变更</text>
+        <text x="480" y="891" fill="#fbbf24" font-size="7" text-anchor="middle">追加 LanceDB + 重建IVF_PQ索引</text>
+        <text x="480" y="904" fill="#fbbf24" font-size="7" text-anchor="middle">⚠ 内嵌分块逻辑(第2套) · 覆盖index_state</text>
+
+        <!-- 结构化库构建 -->
+        <rect x="640" y="840" width="280" height="70" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="780" y="860" fill="white" font-size="10" font-weight="600" text-anchor="middle">buildStructDb.cjs</text>
+        <text x="780" y="876" fill="#94a3b8" font-size="8" text-anchor="middle">结构化知识库构建</text>
+        <text x="780" y="891" fill="#fbbf24" font-size="7" text-anchor="middle">better-sqlite3 · 扫描 Raw/Wiki</text>
+        <text x="780" y="904" fill="#fbbf24" font-size="7" text-anchor="middle">⚠ SQLite全量重建 · 增量时也重建</text>
+
+        <!-- 分块逻辑3套并存 -->
+        <rect x="940" y="840" width="320" height="70" rx="6" fill="rgba(251, 146, 60, 0.12)" stroke="#fb923c" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="1100" y="860" fill="#fb923c" font-size="9" font-weight="600" text-anchor="middle">⚠ 3套分块逻辑并存</text>
+        <text x="1100" y="877" fill="#fb923c" font-size="7" text-anchor="middle">parser.ts chunkDocument() (TS运行时)</text>
+        <text x="1100" y="892" fill="#fb923c" font-size="7" text-anchor="middle">buildIndex.cjs 内嵌 (CJS构建时)</text>
+        <text x="1100" y="907" fill="#fb923c" font-size="7" text-anchor="middle">buildIncremental.cjs 内嵌 (CJS构建时)</text>
+
+        <!-- =============================================
+             跨层连接箭头
+             ============================================= -->
+        <!-- chat → session -->
+        <line x1="142" y1="135" x2="142" y2="238" stroke="#34d399" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="158" y="190" fill="#34d399" font-size="7">会话</text>
+
+        <!-- chat → queryRewriter -->
+        <line x1="142" y1="135" x2="250" y2="353" stroke="#fb923c" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="200" y="250" fill="#fb923c" font-size="7">改写</text>
+
+        <!-- search → entityRouter -->
+        <line x1="327" y1="135" x2="327" y2="353" stroke="#fb923c" stroke-width="1" stroke-dasharray="4,3"/>
+
+        <!-- rewrite → hybridSearch -->
+        <line x1="327" y1="410" x2="327" y2="473" stroke="#34d399" stroke-width="1" stroke-dasharray="4,3"/>
+
+        <!-- chat → hybridSearch -->
+        <line x1="142" y1="135" x2="145" y2="473" stroke="#34d399" stroke-width="1" stroke-dasharray="4,3"/>
+
+        <!-- entityRouter → loadEntityDocsContent -->
+        <line x1="512" y1="410" x2="512" y2="538" stroke="#a78bfa" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="528" y="480" fill="#a78bfa" font-size="7">实体关联</text>
+
+        <!-- =============================================
+             LEGEND
+             ============================================= -->
+        <rect x="20" y="940" width="1260" height="0" rx="0" fill="transparent" stroke="transparent"/>
+
+        <text x="40" y="938" fill="white" font-size="10" font-weight="600">图例</text>
+
+        <rect x="40" y="948" width="16" height="10" rx="2" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="62" y="956" fill="#94a3b8" font-size="8">API 入口</text>
+
+        <rect x="140" y="948" width="16" height="10" rx="2" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1"/>
+        <text x="162" y="956" fill="#94a3b8" font-size="8">检索/会话</text>
+
+        <rect x="250" y="948" width="16" height="10" rx="2" fill="rgba(251, 146, 60, 0.3)" stroke="#fb923c" stroke-width="1"/>
+        <text x="272" y="956" fill="#94a3b8" font-size="8">Query改写/路由</text>
+
+        <rect x="380" y="948" width="16" height="10" rx="2" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="402" y="956" fill="#94a3b8" font-size="8">存储/数据库</text>
+
+        <rect x="510" y="948" width="16" height="10" rx="2" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1"/>
+        <text x="532" y="956" fill="#94a3b8" font-size="8">构建脚本</text>
+
+        <rect x="620" y="948" width="16" height="10" rx="2" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1"/>
+        <text x="642" y="956" fill="#94a3b8" font-size="8">外部API</text>
+
+        <line x1="740" y1="953" x2="756" y2="953" stroke="#fb923c" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="762" y="956" fill="#94a3b8" font-size="8">可疑行为/风险</text>
+
+        <line x1="870" y1="953" x2="886" y2="953" stroke="#64748b" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="892" y="956" fill="#94a3b8" font-size="8">跨层调用</text>
+
+        <rect x="990" y="948" width="16" height="10" rx="2" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1"/>
+        <text x="1012" y="956" fill="#94a3b8" font-size="8">文件系统/配置</text>
+      </svg>
+    </div>
+
+    <!-- Info Cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot orange"></div>
+          <h3>多套实现并存 (6组)</h3>
+        </div>
+        <ul>
+          <li>• 分块逻辑 ×3: parser.ts / buildIndex / buildIncremental</li>
+          <li>• 实体提取 ×2: LLM / jieba+字典匹配</li>
+          <li>• 检索路径 ×3: 实体注入 / 元信息查询 / RRF语义检索</li>
+          <li>• Query改写 ×2: chat(LLM) / search(jieba仅)</li>
+          <li>• 上下文窗口 ×2: 本地正则 / LLM判断</li>
+          <li>• 索引构建 ×2: 全量 / 增量</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot rose"></div>
+          <h3>高优先级可疑行为</h3>
+        </div>
+        <ul>
+          <li>• 5.1 增量首次=全量但无DROP → LanceDB重复数据</li>
+          <li>• 5.7 连续3轮追问丢失中间query上下文</li>
+          <li>• 5.9 smartRoute失败时重复调用hybridSearch</li>
+          <li>• 5.11 父文档缓存永不过期，增量更新不感知</li>
+          <li>• 5.12 chunks_meta分片数硬编码</li>
+          <li>• 5.13 search API无会话/多轮能力</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot emerald"></div>
+          <h3>核心检索链路 RRF</h3>
+        </div>
+        <ul>
+          <li>• RRF(d) = Σ 1/(60 + rank_i(d))</li>
+          <li>• 向量检索 top20 + BM25 检索 top20</li>
+          <li>• 实体关键词过滤仅作用于向量侧</li>
+          <li>• 过滤后排名缩进重新编号</li>
+          <li>• qwen3-rerank 重排 Top5 替换分数</li>
+          <li>• 最终分数归一化至 0.05~0.95 区间</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot violet"></div>
+          <h3>状态管理 (隐式依赖)</h3>
+        </div>
+        <ul>
+          <li>• sessions Map (内存, 30min TTL, setInterval清理)</li>
+          <li>• knownEntitiesCache / parentDocsCache (永不过期)</li>
+          <li>• entityKeywordsCache / entityInvertedIndex (懒加载)</li>
+          <li>• _lancedbConn / _lancedbTable (进程级连接)</li>
+          <li>• 服务重启后全部丢失 · 无持久化</li>
+          <li>• 增量构建后运行时不感知缓存失效</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <p class="footer">
+      LLM-Wiki · 企业知识库 RAG 系统 · 架构分析 v2026-06-08 · 来源: spec/spec_20260608.md
+    </p>
+  </div>
+
+  <script>
+    async function copyAsImage(btn) {
+      const orig = btn.textContent;
+      try {
+        const el = document.getElementById('report-container');
+        const r = el.getBoundingClientRect();
+        const pad = 32;
+        const canvas = await html2canvas(document.body, { backgroundColor: '#020617', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        btn.textContent = '✓ Copied!';
+      } catch (e) {
+        btn.textContent = '✗ Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+    async function downloadPNG(btn) {
+      const orig = btn.textContent;
+      btn.textContent = '⏳ ...';
+      try {
+        const el = document.getElementById('report-container');
+        const r = el.getBoundingClientRect();
+        const pad = 32;
+        const canvas = await html2canvas(document.body, { backgroundColor: '#020617', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+        const link = document.createElement('a');
+        link.download = 'llm-wiki-architecture.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        btn.textContent = '✓ Done!';
+      } catch (e) {
+        btn.textContent = '✗ Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+    async function downloadPDF(btn) {
+      const orig = btn.textContent;
+      btn.textContent = '⏳ ...';
+      try {
+        const el = document.getElementById('report-container');
+        const r = el.getBoundingClientRect();
+        const pad = 32;
+        const canvas = await html2canvas(document.body, { backgroundColor: '#020617', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+        const imgData = canvas.toDataURL('image/png');
+        const { jsPDF } = window.jspdf;
+        const orientation = canvas.width > canvas.height ? 'landscape' : 'portrait';
+        const pdf = new jsPDF({ orientation, unit: 'px', format: [canvas.width, canvas.height], hotfixes: ['px_scaling'] });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+        pdf.save('llm-wiki-architecture.pdf');
+        btn.textContent = '✓ Done!';
+      } catch (e) {
+        btn.textContent = '✗ Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+  </script>
+</body>
+</html>
