@@ -69,3 +69,9 @@ spec/
 spec/**
 spec/**
 spec/**
+# python-server（Python 后端产物）
+.venv/
+data/
+*.pyc
+__pycache__/
+.pytest_cache/
