@@ -20,6 +20,13 @@ from ..types import (
 from .entity_strategy import adjust_topk_for_broad_query
 from .profile import SearchProfile
 
+# 检索路是 I/O 密集（HTTP Embedding / 列存扫描 / SQLite 查询），复用进程级线程池，
+# 避免每个请求都创建销毁线程；单路异常已在 search_with_fallback 内兜住，不会串扰。
+_MAX_RETRIEVAL_WORKERS = 4
+_RETRIEVAL_POOL = ThreadPoolExecutor(
+    max_workers=_MAX_RETRIEVAL_WORKERS, thread_name_prefix="retrieval"
+)
+
 
 @dataclass
 class PipelineParams:
@@ -54,7 +61,7 @@ def run_search_pipeline(
     matched_keywords = analysis.matched_keywords if analysis else None
     is_entity_query = bool(matched_keywords)
 
-    # 实体干预开关（fusion 过滤 + assembler 加成共用；struct 路 keywords 不受影响）
+    # 实体干预开关（fusion 向量路过滤 + assembler 实体查询分支共用；struct 路 keywords 不受影响）
     entity_filter_enabled = True if profile is None else profile.use_entity_filter
 
     active_retrievers = list(retrievers)
@@ -88,12 +95,11 @@ def run_search_pipeline(
             return []
 
     # 并行检索（单路抛错按空结果继续，维持降级语义）
-    with ThreadPoolExecutor(max_workers=max(1, len(active_retrievers))) as executor:
-        futures = [
-            executor.submit(search_with_fallback, r, top_n_for(r.name))
-            for r in active_retrievers
-        ]
-        hit_lists = [f.result() for f in futures]
+    futures = [
+        _RETRIEVAL_POOL.submit(search_with_fallback, r, top_n_for(r.name))
+        for r in active_retrievers
+    ]
+    hit_lists = [f.result() for f in futures]
 
     print(
         "[Hybrid] 各路召回: "

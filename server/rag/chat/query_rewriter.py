@@ -3,21 +3,33 @@
 1. 优先 LLM 改写 query + 一次调用输出路由决策（追问/docType）
 2. LLM 不可用/返回异常时降级字典匹配 + 本地硬编码规则
 实体匹配/分解算法在 retrieve/keyword_matcher（纯领域规则）。
+
+Schema 由 Agently .output() 注入（不再手写 JSON 字面量 + 正则捞取）。
 """
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass, field
+from typing import Any, Callable
+
+from agently import Agently
+from agently.types.settings import OpenAICompatibleSettings
 
 from ..types import KNOWN_DOC_TYPES
 from ..retrieve.keyword_matcher import decompose_entity, extract_matching_keywords
 from .prompt_template import PromptTemplate
-from .types import LlmMessage
 
 _INTENTS = ("fact", "list", "compare", "summary", "analysis", "other")
-_JSON_OBJECT = re.compile(r"\{.*\}", re.S)
+
+# Agently .output() 接收的 schema 描述：字段名 → (类型, required, description)
+_REWRITE_SCHEMA: dict[str, tuple[Any, Any, str]] = {
+    "rewritten":        (str,       None, "改写后的查询语句"),
+    "entities":         (list[str], None, "从查询中提取的实体关键词（list[str]）"),
+    "intent":           (str,       None, "枚举之一：fact|list|compare|summary|analysis|other"),
+    "relevantDocTypes": (list[str], None, "最可能含答案的文档类型（1-3 个），无关则 []"),
+    "isFollowUp":       (bool,      None, "当前 query 是否依赖上一轮对话才能理解"),
+    "reason":           (str,       None, "改写理由（中文，不超过 20 字）"),
+}
 
 _prompt_template = PromptTemplate()
 
@@ -50,6 +62,19 @@ class SmartRewriteOptions:
     previous_query: str | None = None
 
 
+def _default_settings_factory(llm: object) -> OpenAICompatibleSettings | None:
+    """从任意 LLM 客户端抽取 Agently settings（duck-typing，缺 _config 时返回 None）。"""
+    config = getattr(llm, "_config", None)
+    if config is None:
+        return None
+    base_url = (getattr(config, "base_url", "") or "").rstrip("/") or None
+    return OpenAICompatibleSettings(
+        base_url=base_url,
+        api_key=getattr(config, "api_key", ""),
+        model=getattr(config, "model", ""),
+    )
+
+
 def fallback_route(query: str, matched_entries: list[str]) -> FallbackRouteResult:
     if matched_entries:
         reason = f"匹配到实体词条 [{', '.join(matched_entries)}]"
@@ -59,14 +84,30 @@ def fallback_route(query: str, matched_entries: list[str]) -> FallbackRouteResul
 
 
 class SmartRewriter:
-    def __init__(self, llm, entity_repo) -> None:
+    def __init__(
+        self,
+        llm,
+        entity_repo,
+        *,
+        agent_factory: Callable | None = None,
+        settings_factory: Callable[[object], OpenAICompatibleSettings | None] | None = None,
+    ) -> None:
         self._llm = llm
         self._entity_repo = entity_repo
+        # 接缝 1：测试可注入 FakeAgent，避免真实 Agently 调用
+        self._agent_factory = agent_factory or Agently.create_agent
+        # 接缝 2：测试可注入自定义 settings 工厂（FakeLlm 没 _config 时必填）
+        self._settings_factory = settings_factory or _default_settings_factory
 
     def _rewrite_query(self, query: str, options: SmartRewriteOptions):
         client_llm = options.llm or self._llm
         if not getattr(client_llm, "available", False):
             print("[QueryRewriter] 无 LLM，跳过改写")
+            return None
+
+        settings = self._settings_factory(client_llm)
+        if settings is None:
+            print("[QueryRewriter] 无法从 LLM 抽取 Agently settings，跳过改写")
             return None
 
         entities_with_meta = self._entity_repo.get_known_entities()
@@ -77,27 +118,23 @@ class SmartRewriter:
             else ""
         )
         user_prompt = (
-            f'用户查询: "{query}"{context_hint}\n\n请改写查询并提取实体，输出 JSON。'
+            f'用户查询: "{query}"{context_hint}\n\n请改写查询并提取实体。'
         )
 
         try:
-            content = client_llm.complete(
-                [
-                    LlmMessage(role="system", content=system_prompt),
-                    LlmMessage(role="user", content=user_prompt),
-                ],
-                temperature=0,
-                max_tokens=300,
+            parsed = (
+                self._agent_factory()
+                .set_settings(settings)
+                .options({"temperature": 0, "max_tokens": 300})
+                .system(system_prompt)
+                .input(user_prompt)
+                .output(_REWRITE_SCHEMA)
+                .get_result()
+                .get_data(ensure_keys=list(_REWRITE_SCHEMA.keys()))
             )
-            if not content:
-                print("[QueryRewriter] LLM 返回空 content")
+            if not isinstance(parsed, dict):
+                print(f"[QueryRewriter] LLM 返回非 dict: {type(parsed).__name__}")
                 return None
-
-            match = _JSON_OBJECT.search(content)
-            if not match:
-                print(f"[QueryRewriter] LLM 返回格式异常: {content[:200]}")
-                return None
-            parsed = json.loads(match.group(0))
 
             # 校验 entities 是否在 SQLite 已知列表中（不在的也保留，可能是同义词）
             known_names = [e["name"] for e in entities_with_meta]
@@ -140,7 +177,7 @@ class SmartRewriter:
             )
             print(f"[QueryRewriter] 意图: {intent} | 理由: {reason}")
             print(
-                f"[QueryRewriter] 路由: followUp={parsed.get('isFollowUp') is True}"
+                f"[QueryRewriter] 路由: followUp={bool(parsed.get('isFollowUp'))}"
             )
 
             return SmartRewriteResult(
@@ -149,7 +186,7 @@ class SmartRewriter:
                 intent=intent,
                 method="llm",
                 route_decision=LlmRouteDecision(
-                    is_follow_up=parsed.get("isFollowUp") is True,
+                    is_follow_up=bool(parsed.get("isFollowUp")),
                     relevant_doc_types=relevant_doc_types,
                 ),
                 relevant_doc_types=relevant_doc_types,

@@ -1,7 +1,7 @@
 """SearchResultAssembler（移植自 src/application/search/assembler.ts，Spec 031）。
 
 RetrievalHit[] → SearchResult[]：
-  chunk 附着 → 文档聚合 → 实体加成 → 排序截断 → 归一化 → 高亮 → 组装
+  chunk 附着 → 文档聚合 → 排序截断 → 归一化 → 高亮 → 组装
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from ..types import (
     SearchQuery,
     SearchResult,
 )
-from .entity_strategy import apply_entity_match_boost, generate_highlight
+from .entity_strategy import generate_highlight
 
 _TRAILING_INDEX = re.compile(r"_\d+$")
 
@@ -66,17 +66,14 @@ class SearchResultAssembler:
                 if not has_same_title:
                     existing.append((chunk, f))
 
-        # Step 3: 实体匹配度加成
-        apply_entity_match_boost(doc_chunks, matched_keywords)
-
-        # Step 4: 排序 + 截断
+        # Step 3: 排序 + 截断
         all_chunks = [item for entries in doc_chunks.values() for item in entries]
         final_top_k = top_k if is_entity_query else top_k * 2
         sorted_docs = sorted(all_chunks, key=lambda item: -(item[1].scores.rrf or 0.0))[
             :final_top_k
         ]
 
-        # Step 5: 归一化（RRF 原始值映射到 0.05~0.95）
+        # Step 4: 归一化（RRF 原始值映射到 0.05~0.95）
         max_rrf = sorted_docs[0][1].scores.rrf if sorted_docs else None
         if max_rrf is None:
             max_rrf = 0.001
@@ -84,7 +81,7 @@ class SearchResultAssembler:
         if min_rrf is None:
             min_rrf = 0.0
 
-        # Step 6: 高亮 + 组装
+        # Step 5: 高亮 + 组装
         results: list[SearchResult] = []
         for chunk, hit in sorted_docs:
             source = "hybrid"

@@ -7,6 +7,8 @@
   4. 跨 section 全局 chunkIndex
   5. 合并过短相邻 chunk（合并后重排 chunkIndex，但 chunk id 保留合并前编号）
   6. 记录 sectionTitle
+  7. 重叠按完整单元回带；单个单元体积超过 overlap_unit_max 时放弃重叠
+     （宁可牺牲跨块语义连贯，也不让大段落被整段复制到下一块）
 
 注意：chunk id 用「合并前」的 chunkIdx 生成，短块合并不重新生成 id（历史行为，勿改）。
 """
@@ -35,6 +37,18 @@ class Chunk:
     wiki_links: list[str] = field(default_factory=list)
     parent_doc_id: str = ""
     section_title: str | None = None
+
+
+@dataclass
+class _Unit:
+    """分块中间态：一个不可再分的文本单元（一个句子，或整张表格）。
+
+    模块私有；只服务于 chunk_document，不进对外契约。
+    """
+
+    text: str
+    is_table: bool
+    section_title: str
 
 
 def extract_wiki_links(content: str) -> list[str]:
@@ -140,16 +154,11 @@ def chunk_document(
     metadata: dict,
     min_chunk_size: int = 200,
     max_chunk_size: int = 1000,
+    overlap_unit_ratio: float = 0.2,
 ) -> list[Chunk]:
     parent_doc_id = f"parent_{doc_id}"
 
     sections = _SECTION_SPLIT.split(content)
-
-    @dataclass
-    class _Unit:
-        text: str
-        is_table: bool
-        section_title: str
 
     units: list[_Unit] = []
     for section in sections:
@@ -195,6 +204,10 @@ def chunk_document(
     current_section_title = ""
     chunk_idx = 0
     overlap_chars_target = round((min_chunk_size + max_chunk_size) / 2 * 0.1)
+    # 单个可回退单元的体积上限：超过就整段放弃回退。
+    # 旧行为按"单元"回带，一个 900 字的段落会被原样复制到下一块，
+    # 实际重叠量可达目标的十几倍，索引体积与检索重复都不可控。
+    overlap_unit_max = max(overlap_chars_target, round(max_chunk_size * overlap_unit_ratio))
 
     for i, unit in enumerate(units):
         if len(current_chunk) == 0:
@@ -217,12 +230,16 @@ def chunk_document(
             chunks.append(make_chunk(current_chunk.strip(), chunk_idx, current_section_title))
             chunk_idx += 1
 
-            # 重叠：从本 chunk 首个单元往前取完整单元（跳过表格，避免切碎表格）
+            # 重叠：从本 chunk 首个单元往前取完整单元
+            # （跳过表格避免切碎表格；超大单元直接放弃重叠，宁可少重叠也不复制大段落）
             overlap_chars = 0
             overlap_idx = i
             while overlap_idx > 0 and overlap_chars < overlap_chars_target:
+                candidate = units[overlap_idx - 1]
+                if len(candidate.text) > overlap_unit_max:
+                    break
                 overlap_idx -= 1
-                overlap_chars += len(units[overlap_idx].text)
+                overlap_chars += len(candidate.text)
             overlap_units = [u.text for u in units[overlap_idx:i] if not u.is_table]
             current_chunk = "\n".join(overlap_units) + "\n" + unit.text + "\n"
             current_section_title = unit.section_title

@@ -1,6 +1,6 @@
 """SearchResultAssembler 测试（翻译自 test/assembler.test.ts，Spec 031）。
 
-chunk 附着 / 文档聚合 / boost / 归一化 / 高亮 / source 判定。
+chunk 附着 / 文档聚合 / 归一化 / 高亮 / source 判定。
 """
 
 import re

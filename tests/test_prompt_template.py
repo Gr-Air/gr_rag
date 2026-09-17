@@ -136,5 +136,7 @@ def test_build_rewrite_prompt_contains_categories(template):
     assert "Redis" in system
     assert "徐峰" in system
     assert "微服务" in system
-    assert "isFollowUp" in system
-    assert "relevantDocTypes" in system
+    # schema 仍在 prompt 内（让 LLM 一次答对），同时由 Agently .output() 在响应侧校验兜底
+    assert '"rewritten"' in system
+    assert '"relevantDocTypes"' in system
+    assert '"isFollowUp"' in system

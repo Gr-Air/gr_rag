@@ -2,7 +2,7 @@
 
 手写全部 deps fake，验证：
 - fallback / llm 两条改写路径与缓存读写、prewarm
-- 实体文档优先、AND/OR 失败降级 rrf、docType 过滤
+- 实体 chunk 召回优先（与 /api/search 同源）、AND/OR 失败降级 rrf、docType 过滤
 - 追问 enriched query / 本地追问检测 / previous_query 透传
 - 事件顺序、assistant 落库、no-llm / error 不写 assistant、请求级 LLM 覆盖
 """
@@ -31,6 +31,7 @@ from server.rag.chat.types import (
     RagNoLlmEvent,
     RagTokenEvent,
 )
+from server.rag.retrieve.entity_search import EntitySearchDeps, create_entity_search
 from server.rag.retrieve.entity_strategy import POLICY_VERSION
 from server.rag.retrieve.hybrid_search import HybridSearchOptions
 from server.rag.types import DocChunk, Scores, SearchResult
@@ -112,7 +113,12 @@ class FakeStructQuery:
         self._results = (
             results
             if results is not None
-            else [{"chunks": [{"chunk_id": "raw_华润置地_0"}]}]
+            else [
+                {
+                    "entry": {"name": "华润置地", "frequency": 100},
+                    "chunks": [{"chunk_id": "raw_华润置地_0"}],
+                }
+            ]
         )
         self.calls: list[tuple] = []
 
@@ -124,12 +130,14 @@ class FakeStructQuery:
         return self._results
 
 
-class FakeFileStore:
-    def __init__(self, docs=None):
-        self._docs = docs or {}
+class FakeEntityRepo:
+    """EntitySearch 只在字典匹配时用它；chunk 召回路径不触发。"""
 
-    def read_raw_doc(self, name):
-        return self._docs.get(name)
+    def is_ready(self):
+        return False
+
+    def get_known_entities(self):
+        return []
 
 
 class FakeMeta:
@@ -195,7 +203,6 @@ def build_service(
     rewriter=None,
     hybrid=None,
     struct=None,
-    file_store=None,
     chunk_store=None,
     cache=None,
     rag=None,
@@ -215,16 +222,29 @@ def build_service(
     def prewarm_query(text, emb):
         prewarm_calls.append((text, emb))
 
+    chunk_store = chunk_store or FakeChunkStore()
+    hybrid = hybrid or FakeHybrid()
+    struct = struct or FakeStructQuery(ready=False)
+
+    # 实体路与 /api/search 共用 EntitySearch.recall_entity_chunks，故组装真实实例
+    entity_search = create_entity_search(
+        EntitySearchDeps(
+            chunk_store=chunk_store,
+            struct_query=struct,
+            entity_repo=FakeEntityRepo(),
+            hybrid_search=hybrid,
+        )
+    )
+
     deps = {
         "llm": llm,
         "embed_query": embed_query,
         "prewarm_query": prewarm_query,
         "cache_lookup": (cache or FakeCache()).lookup,
         "cache_save": (cache or FakeCache()).save,
-        "chunk_store": chunk_store or FakeChunkStore(),
-        "struct_query": struct or FakeStructQuery(ready=False),
-        "file_store": file_store or FakeFileStore(),
-        "hybrid_search": hybrid or FakeHybrid(),
+        "chunk_store": chunk_store,
+        "entity_search": entity_search,
+        "hybrid_search": hybrid,
         "smart_rewriter": rewriter or FakeRewriter(),
         "rag_chat_stream": rag or FakeRagStream(),
     }
@@ -323,13 +343,24 @@ class TestFallbackPath:
 
 
 class TestEntityPath:
-    def test_entity_docs_skip_hybrid(self):
+    def test_entity_chunks_skip_hybrid(self):
+        """实体路改为 chunk 召回（与 /api/search 同源）：走 pre_search_results。"""
+        chunk_store = FakeChunkStore({
+            "raw_华润置地_0": DocChunk(
+                id="raw_华润置地_0",
+                doc_id="raw_华润置地",
+                doc_title="华润置地",
+                doc_path="Raw/华润置地.md",
+                chunk_index=0,
+                content="华润置地由集团总部直接管理，华润置地项目分布全国。",
+                wiki_links=["集团组织"],
+            )
+        })
         struct = FakeStructQuery()
-        file_store = FakeFileStore(docs={"华润置地": "# 华润置地\n[[链接]] 正文内容"})
         hybrid = FakeHybrid()
         cache = FakeCache()
-        rag = FakeRagStream(script=[RagContextEvent(results=[]), RagTokenEvent(content="x"),
-                                    RagDoneEvent()])
+        rag = FakeRagStream(script=[RagContextEvent(results=[make_result("E1")]),
+                                    RagTokenEvent(content="x"), RagDoneEvent()])
         rewriter = FakeRewriter(fixed=SmartRewriteResult(
             rewritten_query="华润置地",
             entities=["华润置地"],
@@ -338,7 +369,7 @@ class TestEntityPath:
             route_decision=None,
         ))
         service, _, embed_calls, _ = build_service(
-            rewriter=rewriter, struct=struct, file_store=file_store,
+            rewriter=rewriter, struct=struct, chunk_store=chunk_store,
             hybrid=hybrid, cache=cache, rag=rag,
         )
 
@@ -347,17 +378,57 @@ class TestEntityPath:
         method = events[0]
         assert method.method == "entity"
         assert method.matched_keywords == ["华润置地"]
-        assert "华润置地" in method.entity_docs_content
-        assert "全文" in method.entity_docs_content
-        assert "链接" in method.entity_docs_content  # wiki link 已清除 [[]]
-        assert "[[链接]]" not in method.entity_docs_content
+        assert method.entity_docs_content is None  # 不再注入 Raw 全文
         assert hybrid.calls == []
         assert cache.lookup_calls == [] and cache.save_calls == []
         assert embed_calls == []
 
         _, rag_opts = rag.calls[0]
-        assert rag_opts.entity_docs_content == method.entity_docs_content
-        assert rag_opts.pre_search_results == []
+        assert rag_opts.entity_docs_content is None
+        assert [r.chunk.id for r in rag_opts.pre_search_results] == ["raw_华润置地_0"]
+        assert rag_opts.pre_search_results[0].source == "entity"
+        # 内容是 chunk 的实体上下文片段，且带实体高亮
+        assert "**华润置地**" in rag_opts.pre_search_results[0].highlight
+
+        # 结果进 context 事件（前端可见来源与分数）
+        ctx = next(e for e in events if isinstance(e, ChatContextEvent))
+        assert [r.chunk.id for r in ctx.results] == ["E1"]
+
+    def test_wiki_entry_chunk_now_recalled(self):
+        """纯概念查询：struct 只返回 wiki chunk。
+
+        旧实现只认 raw_ 前缀 → doc_names 为空 → 降级语义检索；chunk 召回后能命中。
+        """
+        chunk_store = FakeChunkStore({
+            "wiki_CRM_0": DocChunk(
+                id="wiki_CRM_0",
+                doc_id="wiki_CRM",
+                doc_title="CRM",
+                doc_path="Wiki/concept/CRM.md",
+                chunk_index=0,
+                content="CRM 是客户关系管理系统，本项目的 CRM 用于销售线索管理。",
+            )
+        })
+        struct = FakeStructQuery(results=[{
+            "entry": {"name": "CRM", "frequency": 12},
+            "chunks": [{"chunk_id": "wiki_CRM_0"}],
+        }])
+        hybrid = FakeHybrid()
+        rag = FakeRagStream()
+        rewriter = FakeRewriter(fixed=SmartRewriteResult(
+            rewritten_query="CRM是什么", entities=["CRM"], intent="other",
+            method="fallback", route_decision=None,
+        ))
+        service, _, _, _ = build_service(
+            rewriter=rewriter, struct=struct, chunk_store=chunk_store,
+            hybrid=hybrid, rag=rag,
+        )
+
+        events = run(service, "CRM是什么")
+        assert events[0].method == "entity"
+        assert hybrid.calls == []
+        _, rag_opts = rag.calls[0]
+        assert [r.chunk.id for r in rag_opts.pre_search_results] == ["wiki_CRM_0"]
 
     def test_struct_not_ready_falls_back_rrf(self):
         struct = FakeStructQuery(ready=False)
@@ -387,21 +458,35 @@ class TestEntityPath:
         assert hybrid.calls
 
     def test_multi_entity_and_then_or(self):
+        """多实体先 AND 精准（避免 "ERP" 等短词误匹配），无结果降级 OR。"""
+
         class AndOrStruct(FakeStructQuery):
             def query(self, names, mode):
                 self.calls.append((list(names), mode))
                 if mode == "and":
                     return []
-                return [{"chunks": [{"chunk_id": "raw_Redis_0"}]}]
+                return [{
+                    "entry": {"name": "Redis", "frequency": 30},
+                    "chunks": [{"chunk_id": "raw_Redis_0"}],
+                }]
 
         struct = AndOrStruct()
-        file_store = FakeFileStore(docs={"Redis": "Redis 短文档内容"})
+        chunk_store = FakeChunkStore({
+            "raw_Redis_0": DocChunk(
+                id="raw_Redis_0",
+                doc_id="raw_Redis",
+                doc_title="Redis",
+                doc_path="Raw/Redis.md",
+                chunk_index=0,
+                content="Redis 用作会话缓存，Redis 集群三主三从。",
+            )
+        })
         rewriter = FakeRewriter(fixed=SmartRewriteResult(
             rewritten_query="q", entities=["Redis", "MySQL"], intent="other",
             method="fallback", route_decision=None,
         ))
         service, _, _, _ = build_service(
-            struct=struct, file_store=file_store, rewriter=rewriter
+            struct=struct, chunk_store=chunk_store, rewriter=rewriter
         )
         events = run(service, "q")
         assert struct.calls == [(["Redis", "MySQL"], "and"), (["Redis", "MySQL"], "or")]

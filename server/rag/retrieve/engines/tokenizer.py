@@ -7,6 +7,7 @@ Python 统一后，本模块 + 同目录 custom_words.txt 为全项目唯一真�
 - cut(text, HMM=False)（对应 node jieba.cut(text, false)）
 - trim 后长度 >= 1 保留
 - tokenize*：去重保序（查询侧）；tokenize_all*：保留词频（索引侧）
+- 停用词过滤在索引侧与查询侧**同时开启**（两侧同口径，否则词项对不上会静默漏召）
 """
 
 from __future__ import annotations
@@ -65,12 +66,15 @@ def _cut(text: str) -> list[str]:
 
 
 def tokenize(text: str) -> list[str]:
-    """分词去重保序（查询侧）。"""
+    """分词去重保序，不过滤停用词。当前无生产调用方（仅测试引用）。"""
     return list(dict.fromkeys(_cut(text)))
 
 
 def tokenize_all(text: str) -> list[str]:
-    """分词保留词频（索引构建侧 TF/文档词数）。"""
+    """分词保留词频，不过滤停用词。当前无生产调用方（仅测试引用）。
+
+    索引构建请用 tokenize_all_filtered，与查询侧 tokenize_filtered 保持同口径。
+    """
     return _cut(text)
 
 
@@ -80,11 +84,11 @@ def tokenize_filtered(text: str) -> list[str]:
 
 
 def tokenize_all_filtered(text: str) -> list[str]:
-    """分词 + 停用词过滤，保留词频（索引侧）。"""
+    """分词 + 停用词过滤，保留词频。**索引侧唯一入口**（indexing/cli._build_bm25）。"""
     return [t for t in _cut(text) if t not in STOPWORDS]
 
 
 @lru_cache(maxsize=4096)
 def tokenize_query_cached(text: str) -> tuple[str, ...]:
-    """运行时查询分词缓存（P2 引擎使用）。"""
+    """查询分词缓存的未接线版本。当前无生产调用方：BM25 引擎直接调 tokenize_filtered。"""
     return tuple(tokenize_filtered(text))

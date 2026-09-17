@@ -5,7 +5,8 @@
 - bm25/shard_*.json + meta.json + doc_lengths.json
 - parents/parents.json
 - vectors/config.json
-- lancedb/chunks.lance（+ IVF_PQ 向量索引，失败降级暴力搜索）
+- lancedb/chunks.lance（+ 按规模选择的向量索引：小数据跳过索引走暴力检索，
+  中等规模 HNSW(SQ)，大规模 IVF_PQ；训练失败时降级暴力搜索）
 """
 
 from __future__ import annotations
@@ -17,9 +18,16 @@ from pathlib import Path
 from typing import Any
 
 import lancedb
+from lancedb.index import HnswSq, IvfPq
 
-from ..config import get_settings
 from .chunker import Chunk
+
+# --- 向量索引策略阈值（按向量条数分档）---
+# 低于 BRUTE_FORCE_MAX：不建 ANN 索引，检索走精确暴力余弦（规模小、更快且召回 100%）
+# BRUTE_FORCE_MAX ~ HNSW_MAX：HNSW + 标量量化，低延迟高召回、内存约为满向量的 1/4
+# 高于 HNSW_MAX：IVF_PQ，PQ 压缩最省内存（代价是精度略降）
+BRUTE_FORCE_MAX = 10_000
+HNSW_MAX = 100_000
 
 
 def _dump_json(path: Path, obj: Any) -> None:
@@ -43,7 +51,7 @@ def write_chunks_meta(chunks: list[Chunk], data_dir: Path, shard_size: int = 200
 
     shard_idx = 0
     for i in range(0, len(chunks), shard_size):
-        shard: dict[str, dict] = {}
+        shard: dict[str, dict[str, Any]] = {}
         for c in chunks[i : i + shard_size]:
             shard[c.id] = {
                 "docId": c.doc_id,
@@ -67,7 +75,7 @@ def write_chunks_meta(chunks: list[Chunk], data_dir: Path, shard_size: int = 200
 
 
 def write_bm25_index(
-    inv_index: dict[str, list[dict]],
+    inv_index: dict[str, list[dict[str, Any]]],
     doc_lengths: dict[str, int],
     data_dir: Path,
     shard_size: int = 5000,
@@ -100,14 +108,15 @@ def write_bm25_index(
     return shard_idx
 
 
-def write_parents(parents: dict[str, dict], data_dir: Path) -> None:
+def write_parents(parents: dict[str, dict[str, Any]], data_dir: Path) -> None:
     parents_dir = data_dir / "parents"
     parents_dir.mkdir(parents=True, exist_ok=True)
     _dump_json(parents_dir / "parents.json", parents)
     print(f"  ✅ parents: {len(parents)} 个父文档")
 
 
-def write_vector_config(total_chunks: int, dim: int, data_dir: Path, index_type: str = "IVF_PQ") -> None:
+def write_vector_config(total_chunks: int, dim: int, data_dir: Path, index_type: str) -> None:
+    """落盘向量配置。index_type 为实际索引类型（BRUTE_FORCE / HNSW_SQ / IVF_PQ）。"""
     vec_dir = data_dir / "vectors"
     vec_dir.mkdir(parents=True, exist_ok=True)
     _dump_json(
@@ -128,8 +137,8 @@ def write_lancedb(
     vectors: list[list[float]],
     dim: int,
     data_dir: Path,
-) -> None:
-    """建表 + IVF_PQ 余弦索引（失败降级暴力搜索）。"""
+) -> str:
+    """建表 + 按规模选择余弦索引（详见 _create_vector_index），返回实际索引类型。"""
     lance_dir = data_dir / "lancedb"
     if lance_dir.exists():
         print("  清空旧 LanceDB 数据...")
@@ -160,19 +169,43 @@ def write_lancedb(
     table = db.create_table("chunks", data=records, mode="overwrite")
     print(f"  ✅ LanceDB 表已创建: {len(records)} 条记录")
 
-    try:
-        num_partitions = min(max(math.floor(len(chunks) / 20), 4), 256)
+    return _create_vector_index(table, len(records), dim)
+
+
+def _create_vector_index(table: Any, count: int, dim: int) -> str:
+    """按向量条数选择索引策略，统一走 LanceDB 新版 unified API。返回实际索引类型。
+
+    新版 API 形如 ``create_index("vector", config=IvfPq(distance_type="cosine"))``，
+    替代已弃用的 ``metric= / num_partitions= / index_type=`` 老写法
+    （老写法在 lancedb>=0.20 起会抛 DeprecationWarning）。训练失败时降级暴力搜索。
+    """
+    if count < BRUTE_FORCE_MAX:
+        print(f"  ℹ️ {count} 条向量 < {BRUTE_FORCE_MAX}，低于 ANN 有效规模，跳过建索引（检索走暴力余弦，精确且更快）")
+        return "BRUTE_FORCE"
+
+    if count < HNSW_MAX:
+        # 中等规模：图结构保证高召回，标量量化把内存压到约 1/4
+        config = HnswSq(distance_type="cosine")
+        desc = "HNSW(SQ)"
+        index_type = "HNSW_SQ"
+    else:
+        # 大规模：IVF 聚类 + PQ 压缩，内存开销最小
+        num_partitions = min(max(math.floor(count / 20), 4), 256)
         num_sub_vectors = min(int(dim / 8), 64)
-        print(f"  创建 IVF_PQ 向量索引 (partitions={num_partitions}, sub_vectors={num_sub_vectors})...")
-        table.create_index(
-            metric="cosine",
+        config = IvfPq(
+            distance_type="cosine",
             num_partitions=num_partitions,
             num_sub_vectors=num_sub_vectors,
-            index_type="IVF_PQ",
             max_iterations=50,
-            vector_column_name="vector",
-            replace=True,
         )
-        print("  ✅ IVF_PQ 向量索引创建完成")
+        desc = f"IVF_PQ(partitions={num_partitions}, sub_vectors={num_sub_vectors})"
+        index_type = "IVF_PQ"
+
+    try:
+        print(f"  创建 {desc} 向量索引...")
+        table.create_index("vector", config=config, replace=True)
+        print(f"  ✅ {desc} 向量索引创建完成")
+        return index_type
     except Exception as e:
-        print(f"  ⚠️ IVF_PQ 索引创建失败（将使用暴力搜索）: {e}")
+        print(f"  ⚠️ {desc} 向量索引创建失败（将使用暴力搜索）: {e}")
+        return "BRUTE_FORCE"

@@ -118,3 +118,26 @@ def test_section_title_blank_for_h1_preface_chunk():
 def test_empty_content_fallback_no_crash():
     chunks = chunk_document("", "raw_e", "t", "Raw/e.md", META)
     assert chunks == []
+
+
+def test_overlap_skipped_for_oversized_unit():
+    # 前块尾部是超大单元（> overlap_unit_max）时放弃重叠：
+    # 旧行为会把整个大段落复制到下一块，导致索引膨胀 + 检索结果重复
+    big = "甲" * 600
+    mid1 = "乙" * 400
+    mid2 = "丙" * 400
+    content = f"# t\n\n{big}\n\n{mid1}\n\n{mid2}\n"
+    chunks = chunk_document(content, "raw_ov", "t", "Raw/ov.md", META)
+    assert len(chunks) == 2
+    assert big in chunks[0].content
+    assert big not in chunks[1].content, "超大单元不得被整段回带到下一个 chunk"
+
+
+def test_overlap_applied_for_small_units():
+    # 单元均不超过上限时，重叠行为保持原样（回带完整单元，落在句边界）
+    sent = "测试内容" * 5 + "。"  # 21 字符，一句一个单元
+    content = "# t\n\n" + sent * 60
+    chunks = chunk_document(content, "raw_ov2", "t", "Raw/ov2.md", META)
+    assert len(chunks) >= 2
+    assert chunks[0].content.endswith(sent)
+    assert chunks[1].content.startswith(sent), "小单元应正常回带重叠"

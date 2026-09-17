@@ -35,15 +35,18 @@ ENV/
 .ruff_cache/
 .pyright/
 
-# Environment variables
+# Environment variables（.env.example 是配置模板，需要入库）
 .env
-.env.*
+.env.local
+.env.*.local
+!.env.example
 
 # Logs
 *.log
 logs/
 
-# Data / vector stores
+# Data / vector stores（索引产物，可由 python -m server.indexing.cli 重建）
+data/
 *.db
 *.sqlite
 *.sqlite3

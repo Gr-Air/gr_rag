@@ -1,13 +1,14 @@
-"""kb_info 测试（对应 TS parser.ts 的运行时重解析，非索引 chunker）。
+"""kb_info 测试（Raw/Wiki 运行时重解析）。
 
-- Raw 文件名解析 / 标题规则 / wiki 链接去重保序 / 语义 chunk 计数
+- Raw 文件名解析（metadata）/ chunk 计数（与索引分块器同源）
 - Wiki 词条：频次提取、实体类别、concept 无 category 键、频次降序稳定排序
-- get_wiki_stats 聚合与 list_raw_docs 字段顺序
+- get_wiki_stats 聚合
 """
 
 from __future__ import annotations
 
-from server.kb.kb_info import KbInfo, _semantic_chunk_count
+from server.indexing.chunker import chunk_document
+from server.kb.kb_info import KbInfo, count_chunks
 
 
 def _write(directory, name: str, content: str):
@@ -20,26 +21,44 @@ def _kb(tmp_path) -> KbInfo:
 
 
 # ------------------------------------------------------------
-# semanticChunkDocument 计数（parser.ts 版）
+# chunk 计数（与 indexing 分块器同源）
 # ------------------------------------------------------------
 
 
+def _chunks(content: str) -> list:
+    return chunk_document(content, "raw_x", "标题", "Raw/raw_x.md", {})
+
+
+def _count(content: str) -> int:
+    return count_chunks(content, "raw_x", "标题", "Raw/raw_x.md", {})
+
+
 def test_chunk_count_empty_and_single():
-    assert _semantic_chunk_count("") == 0
-    assert _semantic_chunk_count("\n\n  \n") == 0
-    assert _semantic_chunk_count("短。") == 1
+    assert _count("") == 0
+    assert _count("\n\n  \n") == 0
+    assert _count("短。") == 1
 
 
 def test_chunk_count_multiple_chunks():
-    # 每句 301 字符（含句号）；按 TS 算法：906 入块、1207 触发切分 → 3 块
+    # 每句 301 字符（含句号）：单元超过 overlap_unit_max(200) 时放弃重叠，
+    # 于是每块能装 3 句 → 6 句切成 2 块（各 905 字，无重复内容）
     sentence = "字" * 300 + "。"
-    assert _semantic_chunk_count(sentence * 6) == 3
+    assert _count(sentence * 6) == 2
 
 
-def test_chunk_count_uses_parser_not_table_chunker():
-    # 表格在 parser.ts 里被当普通段落句子，与 indexing/chunker.py 的表格感知不同
+def test_chunk_count_same_source_as_index():
+    """stats/docs 的 totalChunks 必须与索引分块器口径一致（同源契约）。"""
     content = "## 标题\n\n" + ("数据。" * 50)
-    assert _semantic_chunk_count(content) >= 1
+    assert _count(content) == len(_chunks(content))
+
+
+def test_oversized_table_kept_intact():
+    """表格感知：超过 max 的表格单独成块且不被切碎。"""
+    rows = [f"| f{i} | {'说明' * 40} |" for i in range(20)]
+    content = "| 字段 | 说明 |\n| --- | --- |\n" + "\n".join(rows)
+
+    assert _count(content) == 1
+    assert all(row in _chunks(content)[0].content for row in rows)
 
 
 # ------------------------------------------------------------
@@ -47,32 +66,29 @@ def test_chunk_count_uses_parser_not_table_chunker():
 # ------------------------------------------------------------
 
 
-def test_raw_doc_metadata_and_fields(tmp_path):
+def test_raw_doc_metadata_and_chunk_count(tmp_path):
     raw = tmp_path / "Raw"
     body = "# 项目方案标题\n\n这是正文，提到[[Redis]]与[[Kafka]]，又见[[Redis]]。"
     _write(raw, "客户A_项目X_技术方案_20240101.md", body)
 
-    docs = _kb(tmp_path).list_raw_docs()
+    docs = _kb(tmp_path)._load_raw_docs()
     assert len(docs) == 1
     d = docs[0]
-    assert list(d.keys()) == ["id", "title", "path", "metadata", "wikiLinks", "chunkCount"]
-    assert d["id"] == "raw_客户A_项目X_技术方案_20240101"
-    assert d["path"] == "Raw/客户A_项目X_技术方案_20240101.md"
-    assert d["title"] == "项目方案标题"
+    # 只产出统计真正消费的两个字段
+    assert list(d.keys()) == ["metadata", "chunkCount"]
     assert d["metadata"] == {
         "client": "客户A",
         "project": "项目X",
         "docType": "技术方案",
         "date": "20240101",
     }
-    # 去重保序
-    assert d["wikiLinks"] == ["Redis", "Kafka"]
+    assert d["chunkCount"] >= 1
 
 
 def test_raw_doc_underscore_client_kept(tmp_path):
     raw = tmp_path / "Raw"
     _write(raw, "客户_集团_项目Y_需求规格说明书_20240202.md", "# T\n\n内容。")
-    meta = _kb(tmp_path).list_raw_docs()[0]["metadata"]
+    meta = _kb(tmp_path)._load_raw_docs()[0]["metadata"]
     assert meta["client"] == "客户_集团"
     assert meta["project"] == "项目Y"
 
@@ -80,26 +96,15 @@ def test_raw_doc_underscore_client_kept(tmp_path):
 def test_raw_doc_short_filename_empty_metadata(tmp_path):
     raw = tmp_path / "Raw"
     _write(raw, "短名.md", "# T\n\n内容。")
-    d = _kb(tmp_path).list_raw_docs()[0]
+    d = _kb(tmp_path)._load_raw_docs()[0]
     assert d["metadata"] == {"client": "", "project": "", "docType": "", "date": ""}
-
-
-def test_title_rules(tmp_path):
-    raw = tmp_path / "Raw"
-    # 首行无 "# "（无空格）：TS replace 不生效，保留井号
-    _write(raw, "a_b_c_d.md", "#无空格标题\n\n内容。")
-    assert _kb(tmp_path).list_raw_docs()[0]["title"] == "#无空格标题"
-
-    (raw / "a_b_c_d.md").write_text("\n\n正文。", encoding="utf-8")
-    # 首行为空 → trim 后空串 → 回落文件名
-    assert _kb(tmp_path).list_raw_docs()[0]["title"] == "a_b_c_d.md"
 
 
 def test_non_md_files_ignored(tmp_path):
     raw = tmp_path / "Raw"
     raw.mkdir(parents=True)
     (raw / "notes.txt").write_text("x", encoding="utf-8")
-    assert _kb(tmp_path).list_raw_docs() == []
+    assert _kb(tmp_path)._load_raw_docs() == []
 
 
 # ------------------------------------------------------------
@@ -159,4 +164,4 @@ def test_missing_dirs_return_empty(tmp_path):
     assert stats["totalDocs"] == 0
     assert stats["totalChunks"] == 0
     assert stats["totalConcepts"] == 0
-    assert kb.list_raw_docs() == []
+    assert kb._load_raw_docs() == []

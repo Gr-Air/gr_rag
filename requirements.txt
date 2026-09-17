@@ -1,24 +1,25 @@
 # ============================================================
 # llm-wiki Python 后端（Spec 038）
-# P0 仅安装前 5 项即可起桩；其余按 P1/P2 阶段再装
 #   pip install -r requirements.txt
+# 说明：LLM 请求层通过 Agently 框架对接 OpenAI 兼容端点；
+#       Embedding / Rerank 仍通过 httpx 直连。
 # ============================================================
 
-# --- P0：FastAPI 骨架 ---
+# --- FastAPI 骨架 ---
 fastapi>=0.115
 uvicorn[standard]>=0.32
 pydantic>=2.9
 pydantic-settings>=2.6
 httpx>=0.28
 
-# --- P1：索引流水线 ---
+# --- LLM 请求层 ---
+agently>=4.1
+
+# --- 索引与检索 ---
 jieba>=0.42
 lancedb>=0.20
 pyarrow>=18
 numpy>=2.1
-
-# --- P2/P3：OpenAI 兼容 SDK（改写/RAG/rerank） ---
-openai>=1.50
 
 # --- 测试 ---
 pytest>=8.3

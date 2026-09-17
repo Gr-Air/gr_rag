@@ -1,9 +1,8 @@
-"""知识库统计与 Raw 文档列表（逐字移植自 src/infrastructure/parser/parser.ts）。
+"""知识库统计（对外契约沿用 src/infrastructure/parser/parser.ts）。
 
-注意：这里的语义分块与 indexing/chunker.py（scripts/lib/chunker.cjs 的表格感知版）
-**不是**同一算法——TS 生产侧 stats/docs 实时重解析用的就是 parser.ts 内的
-semanticChunkDocument（非表格感知），totalChunks 因此可能与索引块数不一致。
-行为零变化，勿互换。
+分块口径已统一：chunkCount 由 indexing/chunker.py 的表格感知分块器产出，
+与索引实际落盘块数一致（原 TS 版另有一套非表格感知的 semanticChunkDocument，
+导致 totalChunks 与索引块数对不上）。
 """
 
 from __future__ import annotations
@@ -14,18 +13,9 @@ from functools import lru_cache
 from pathlib import Path
 
 from ..config import get_settings
-from ..indexing.chunker import extract_wiki_links, parse_filename
+from ..indexing.chunker import chunk_document, extract_title, parse_filename
 
-_MIN_CHUNK_SIZE = 200
-_MAX_CHUNK_SIZE = 1000
-_OVERLAP_CHARS = round((_MIN_CHUNK_SIZE + _MAX_CHUNK_SIZE) / 2 * 0.1)
-
-_SECTION_SPLIT = re.compile(r"(?=^## )", flags=re.M)
-_PARA_SPLIT = re.compile(r"\n\s*\n")
 _FREQUENCY = re.compile(r"出现频次:\s*(\d+)")
-
-# 与 chunker._SENTENCE_SPLIT 同一规则（parser.ts 的句子边界正则逐字一致）
-_SENTENCE_SPLIT = re.compile(r"(?<=[。！？])\s*|(?<=\.)\s+(?=[A-Z])|(?<=[!?])\s+(?=[A-Z])")
 
 # guessEntityCategory 词表（逐字移植，顺序勿动）
 _CLIENTS = [
@@ -48,69 +38,15 @@ _DEPARTMENTS = [
 _PERSON_NAME = re.compile(r"^[一-龥]{2,3}$")  # 一-龥 = U+4E00..U+9FA5
 
 
-def _semantic_chunk_count(content: str) -> int:
-    """semanticChunkDocument：只返回合并后的 chunk 数量（stats/docs 只用长度）。"""
-    sections = _SECTION_SPLIT.split(content)
-
-    sentences: list[str] = []
-    for section in sections:
-        trimmed = section.strip()
-        if not trimmed:
-            continue
-        for para in _PARA_SPLIT.split(trimmed):
-            if not para.strip():
-                continue
-            for part in _SENTENCE_SPLIT.split(para):
-                s = part.strip()
-                if s:
-                    sentences.append(s)
-
-    if not sentences:
-        # 降级：固定大小切分
-        count = 0
-        for i in range(0, len(content), _MAX_CHUNK_SIZE):
-            sub = content[i : i + _MAX_CHUNK_SIZE]
-            if sub.strip():
-                count += 1
-        return count
-
-    chunks: list[str] = []
-    current = ""
-    for i, sentence in enumerate(sentences):
-        if (
-            len(current) + len(sentence) > _MAX_CHUNK_SIZE
-            and len(current) >= _MIN_CHUNK_SIZE
-        ):
-            chunks.append(current.strip())
-
-            overlap_chars = 0
-            overlap_idx = i
-            while overlap_idx > 0 and overlap_chars < _OVERLAP_CHARS:
-                overlap_idx -= 1
-                overlap_chars += len(sentences[overlap_idx])
-            current = (
-                "\n".join(sentences[overlap_idx:i]) + "\n" + sentence + "\n"
-            )
-        else:
-            current += sentence + "\n"
-
-    if current.strip():
-        chunks.append(current.strip())
-
-    # 合并过短相邻 chunk（合并会减少 chunk 数）
-    merged: list[str] = []
-    for chunk in chunks:
-        if merged and (len(merged[-1]) < _MIN_CHUNK_SIZE or len(chunk) < _MIN_CHUNK_SIZE):
-            merged[-1] = merged[-1] + "\n\n" + chunk
-        else:
-            merged.append(chunk)
-    return len(merged)
-
-
-def _extract_title(content: str, filename: str) -> str:
-    """parser.ts：首行去 ``^#\\s+`` 后 trim，空则回落文件名。"""
-    first_line = content.split("\n", 1)[0] if content else ""
-    return re.sub(r"^#\s+", "", first_line).strip() or filename
+def count_chunks(
+    content: str,
+    doc_id: str,
+    title: str,
+    doc_path: str,
+    metadata: dict,
+) -> int:
+    """与索引同源计数：直接复用 indexing 的表格感知分块器。"""
+    return len(chunk_document(content, doc_id, title, doc_path, metadata))
 
 
 def _guess_entity_category(name: str) -> str:
@@ -138,6 +74,7 @@ class KbInfo:
     # ------------------------------------------------------------
 
     def _load_raw_docs(self) -> list[dict]:
+        """Raw 文档 → 统计真正消费的字段（metadata + 与索引同源的 chunkCount）。"""
         docs: list[dict] = []
         if not self._raw_dir.exists():
             return docs
@@ -147,22 +84,16 @@ class KbInfo:
             if not filename.endswith(".md"):
                 continue
             content = (self._raw_dir / filename).read_text(encoding="utf-8")
+            metadata = parse_filename(filename)
+            # title 与索引侧（indexing/cli.py）走同一实现，保证计数口径同源
+            title = extract_title(content, filename)
             name = filename[: -len(".md")]
-            meta = parse_filename(filename)
             docs.append(
                 {
-                    "id": f"raw_{name}",
-                    "title": _extract_title(content, filename),
-                    "path": f"Raw/{filename}",
-                    "rawContent": content,
-                    "metadata": {
-                        "client": meta["client"],
-                        "project": meta["project"],
-                        "docType": meta["docType"],
-                        "date": meta["date"],
-                    },
-                    "wikiLinks": extract_wiki_links(content),
-                    "chunkCount": _semantic_chunk_count(content),
+                    "metadata": metadata,
+                    "chunkCount": count_chunks(
+                        content, f"raw_{name}", title, f"Raw/{filename}", metadata
+                    ),
                 }
             )
         return docs
@@ -247,19 +178,6 @@ class KbInfo:
             "projects": sorted(projects),
             "docTypes": sorted(doc_types),
         }
-
-    def list_raw_docs(self) -> list[dict]:
-        return [
-            {
-                "id": d["id"],
-                "title": d["title"],
-                "path": d["path"],
-                "metadata": d["metadata"],
-                "wikiLinks": d["wikiLinks"],
-                "chunkCount": d["chunkCount"],
-            }
-            for d in self._load_raw_docs()
-        ]
 
 
 @lru_cache(maxsize=1)

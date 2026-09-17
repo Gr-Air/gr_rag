@@ -2,9 +2,13 @@
 
 策略：
   1. 字典最大匹配检测 query 中的实体关键字（keyword_matcher）
-  2. 有匹配 → 结构化查询（struct 引擎），返回含实体的上下文片段
-  3. struct 不可用/不足 → chunks_meta wikiLinks 倒排兜底 → RRF 补足
+  2. 有匹配 → 结构化查询（struct 引擎）取关联 chunk 的实体上下文片段
+  3. struct 不可用/仍无命中 → chunks_meta wikiLinks 倒排索引兜底
   4. 无匹配 → RRF 融合检索
+
+**实体路只返回实体命中的 chunk**，不用语义检索结果回填（`recall_entity_chunks`）。
+召回为空时的降级由调用方决定：auto 路由降级 RRF（`method="rrf"`），
+`force_method="entity"` 如实返回空结果。chat 与 `/api/search` 共用同一实现。
 """
 
 from __future__ import annotations
@@ -275,35 +279,55 @@ class EntitySearch:
         return results
 
     # ------------------------------------------------------------
-    # 路由
+    # 实体 chunk 召回（chat 与 /api/search 共用的唯一实体路实现）
     # ------------------------------------------------------------
 
-    def _force_search(self, query: str, top_k: int, method: str) -> RoutedSearchResult:
-        matched = extract_matching_keywords(query, self._load_entity_keywords())
+    def recall_entity_chunks(
+        self, matched_keywords: list[str], top_k: int = 10
+    ) -> list[SearchResult]:
+        """实体关键字 → chunk 上下文片段召回（只召回，不做路由判定）。
 
-        if method == "entity" and matched:
-            try:
-                if self._struct_query.is_ready():
-                    struct_results = self._struct_query.query(matched, "or")
-                    entity_results = self._entity_recall_with_context(
-                        matched, struct_results, top_k
+        降级链：struct（多实体优先 AND 精准）→ OR → chunks_meta wikiLinks 倒排兜底。
+        **只返回实体命中的 chunk**，不掺语义检索结果、不读磁盘 Raw 全文；
+        片段由 `_extract_entity_context` 从内存 chunk 抽取，含 Wiki 词条 chunk。
+        struct 异常或召回为空时返回空列表，由调用方决定是否降级 RRF。
+        """
+        if not matched_keywords:
+            return []
+
+        try:
+            if self._struct_query.is_ready():
+                use_and_first = len(matched_keywords) > 1
+                mode = "and" if use_and_first else "or"
+                struct_results = self._struct_query.query(matched_keywords, mode)
+
+                # 判据是「存在非空 chunks」：有条目但关联 chunk 为空同样要降级
+                if use_and_first and not any(
+                    r.get("chunks") for r in struct_results
+                ):
+                    print("[EntityRouter] struct AND 未命中，降级 OR 查询...")
+                    struct_results = self._struct_query.query(
+                        matched_keywords, "or"
                     )
-                    if entity_results:
-                        return RoutedSearchResult(entity_results, "entity", matched)
-            except Exception as err:
-                print(f"[EntityRouter] 强制实体检索失败，降级: {err}")
 
-            entity_results = self._entity_recall(matched, top_k)
-            return RoutedSearchResult(entity_results, "entity", matched)
+                hits = self._entity_recall_with_context(
+                    matched_keywords, struct_results, top_k
+                )
+                if hits:
+                    print(
+                        f"[EntityRouter] 实体 chunk 召回 {len(hits)} 条: "
+                        f"[{', '.join(matched_keywords)}]"
+                    )
+                    return hits
 
-        rrf_results = self._hybrid_search(
-            query,
-            top_k,
-            20,
-            20,
-            HybridSearchOptions(matched_keywords=matched if matched else None),
-        )
-        return RoutedSearchResult(rrf_results, "rrf")
+            return self._entity_recall(matched_keywords, top_k)
+        except Exception as err:
+            print(f"[EntityRouter] 实体 chunk 召回失败，降级语义检索: {err}")
+            return []
+
+    # ------------------------------------------------------------
+    # 路由
+    # ------------------------------------------------------------
 
     def routed_search(
         self,
@@ -311,44 +335,31 @@ class EntitySearch:
         top_k: int = 10,
         force_method: str | None = None,
     ) -> RoutedSearchResult:
-        if force_method:
-            return self._force_search(query, top_k, force_method)
+        """字典匹配 → 实体 chunk 召回 / RRF 融合检索。
 
+        `force_method="entity"` 如实返回实体结果（可能为空），**不掺语义结果、不改标 method**；
+        `force_method="rrf"` 直接走 RRF；auto 路由下实体召回为空才降级 RRF（`method="rrf"`）。
+        """
         matched = extract_matching_keywords(query, self._load_entity_keywords())
 
-        if matched:
-            print(f"[EntityRouter] 匹配到实体关键字: [{', '.join(matched)}]，使用结构化检索")
-            try:
-                if self._struct_query.is_ready():
-                    struct_results = self._struct_query.query(matched, "or")
-                    entity_results = self._entity_recall_with_context(
-                        matched, struct_results, top_k
-                    )
-                    if entity_results:
-                        return RoutedSearchResult(entity_results, "entity", matched)
-            except Exception as err:
-                print(f"[EntityRouter] 结构化检索失败，降级为倒排索引: {err}")
+        if force_method == "entity":
+            entity_results = self.recall_entity_chunks(matched, top_k)
+            print(
+                f"[EntityRouter] 强制实体检索: [{', '.join(matched)}] → "
+                f"{len(entity_results)} 条"
+            )
+            return RoutedSearchResult(entity_results, "entity", matched or None)
 
-            entity_results = self._entity_recall(matched, top_k)
-
-            if len(entity_results) < top_k:
-                need_more = top_k - len(entity_results)
-                entity_chunk_ids = {r.chunk.id for r in entity_results}
-                rrf_results = self._hybrid_search(
-                    query,
-                    need_more + 5,
-                    20,
-                    20,
-                    HybridSearchOptions(matched_keywords=matched if matched else None),
+        if force_method != "rrf" and matched:
+            entity_results = self.recall_entity_chunks(matched, top_k)
+            if entity_results:
+                print(
+                    f"[EntityRouter] 匹配到实体关键字: [{', '.join(matched)}]，"
+                    f"使用实体 chunk 召回（{len(entity_results)} 条）"
                 )
-                supplements = [
-                    r for r in rrf_results if r.chunk.id not in entity_chunk_ids
-                ][:need_more]
-                entity_results.extend(supplements)
+                return RoutedSearchResult(entity_results, "entity", matched)
 
-            return RoutedSearchResult(entity_results, "entity", matched)
-
-        print("[EntityRouter] 未匹配到实体关键字，使用 RRF 融合检索")
+        print("[EntityRouter] 实体路无结果或未匹配实体，使用 RRF 融合检索")
         rrf_results = self._hybrid_search(
             query,
             top_k,
@@ -356,7 +367,7 @@ class EntitySearch:
             20,
             HybridSearchOptions(matched_keywords=matched if matched else None),
         )
-        return RoutedSearchResult(rrf_results, "rrf")
+        return RoutedSearchResult(rrf_results, "rrf", matched or None)
 
 
 def create_entity_search(deps: EntitySearchDeps) -> EntitySearch:

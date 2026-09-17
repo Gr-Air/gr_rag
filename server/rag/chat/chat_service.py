@@ -1,6 +1,6 @@
 """Chat Use Case（逐字移植自 src/application/chat/chatService.ts）。
 
-会话管理 → query 改写 → 缓存检查 → 实体关联文档 / 语义检索
+会话管理 → query 改写 → 缓存检查 → 实体 chunk 召回 / 语义检索
 → RAG 流式回答 → 会话记录。Presentation 层只做 SSE 事件映射。
 Python 侧同步生成器；对话压缩以守护线程触发，不阻塞当前请求。
 """
@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from ..retrieve.cache import CacheContext
 from ..retrieve.entity_strategy import POLICY_VERSION
 from ..retrieve.hybrid_search import HybridSearchOptions
-from .entity_docs import filter_chunks_by_doc_types, load_entity_docs_content
+from .entity_docs import filter_chunks_by_doc_types
 from .query_rewriter import SmartRewriteOptions
 from .rag_engine import RagChatOptions
 from .sessions import (
@@ -68,8 +68,7 @@ class ChatService:
         self._cache_lookup = deps["cache_lookup"]
         self._cache_save = deps["cache_save"]
         self._chunk_store = deps["chunk_store"]
-        self._struct_query = deps["struct_query"]
-        self._file_store = deps["file_store"]
+        self._entity_search = deps["entity_search"]
         self._hybrid_search = deps["hybrid_search"]
         self._smart_rewriter = deps["smart_rewriter"]
         self._rag_chat_stream = deps["rag_chat_stream"]
@@ -134,24 +133,21 @@ class ChatService:
                 enriched_query = f'[上文: 用户之前问"{last_results.query}"] {query}'
                 print(f'[Chat] 检测到追问，补充上下文: "{last_results.query}"')
 
-        # 1. 实体关联文档优先；无命中走语义检索
+        # 1. 实体关联 chunk 召回（与 /api/search 同一实现）；无命中走语义检索
         results = []
-        entity_docs_content = None
         search_method = "rrf"
 
         if matched:
-            entity_result = load_entity_docs_content(
-                self._struct_query, self._file_store, matched
-            )
-            if entity_result is not None:
-                entity_docs_content = entity_result.docs_content
+            entity_results = self._entity_search.recall_entity_chunks(matched, top_k)
+            if entity_results:
+                results = entity_results
                 search_method = "entity"
                 print(
-                    f"[Chat] 实体关联命中: [{', '.join(matched)}] "
-                    f"({rewrite_result.method})，跳过语义检索"
+                    f"[Chat] 实体 chunk 召回命中: [{', '.join(matched)}] "
+                    f"({rewrite_result.method})，{len(entity_results)} 条，跳过语义检索"
                 )
 
-        if not entity_docs_content:
+        if not results:
             if cached_results is not None:
                 print("[Chat] 检索缓存命中，跳过 hybridSearch")
                 results = cached_results
@@ -201,12 +197,13 @@ class ChatService:
         # 保存检索结果（用于后续追问）
         save_last_search_results(session.id, query, results, search_method)
 
+        # 实体路结果与语义路一样以 chunk 形式走 pre_search_results：
+        # 进 context 事件（前端可见来源/分数）、参与 rerank；entity_docs_content 恒为 None。
         yield ChatMethodEvent(
             method=search_method,
             session_id=session.id,
             rewrite_method=rewrite_result.method,
             matched_keywords=matched or None,
-            entity_docs_content=entity_docs_content or None,
             rewritten_query=rewritten_query if rewrite_result.method == "llm" else None,
         )
 
@@ -219,7 +216,6 @@ class ChatService:
                 llm=client_llm,
                 top_k=top_k,
                 pre_search_results=results,
-                entity_docs_content=entity_docs_content,
                 conversation_context=history_text or None,
                 is_follow_up=is_follow_up,
                 matched_keywords=matched or None,

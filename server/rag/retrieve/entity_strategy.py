@@ -2,14 +2,14 @@
 
 - 查询策略：宽泛查询识别 + 动态 topK
 - 搜索结果高亮片段生成
-- 实体关键词向量过滤标记 + 文档匹配度加成
+- 实体关键词向量过滤标记
 """
 
 from __future__ import annotations
 
 import re
 
-from ..types import DocChunk, RetrievalHit
+from ..types import RetrievalHit
 
 # ============================================================
 # 查询策略
@@ -94,11 +94,8 @@ def generate_highlight(content: str, query: str) -> str:
 
 
 # ============================================================
-# 实体过滤 / 加成
+# 实体过滤
 # ============================================================
-
-"""实体匹配度权重：每个匹配实体增加的额外分数。"""
-ENTITY_MATCH_WEIGHT = 0.2
 
 
 def build_vector_entity_filter(
@@ -124,30 +121,3 @@ def build_vector_entity_filter(
         )
         return excluded_ids
     return None
-
-
-def apply_entity_match_boost(
-    doc_chunks: dict[str, list[tuple[DocChunk, RetrievalHit]]],
-    matched_keywords: list[str] | None,
-) -> int:
-    """整篇文档内容命中的实体词数 × 0.2 加到该文档每个 hit.scores.rrf。"""
-    if not matched_keywords:
-        return 0
-
-    boosted = 0
-    for doc_id, entries in doc_chunks.items():
-        content = " ".join(chunk.content for chunk, _ in entries)
-        matched_count = sum(1 for kw in matched_keywords if kw in content)
-        if matched_count > 0:
-            bonus = matched_count * ENTITY_MATCH_WEIGHT
-            for _, hit in entries:
-                hit.scores.rrf = (hit.scores.rrf or 0.0) + bonus
-            boosted += 1
-            print(
-                f"[Hybrid] 实体匹配度加成: [{doc_id}] 匹配 {matched_count} 个实体关键词，"
-                f"+{bonus} 分数"
-            )
-
-    if boosted > 0:
-        print(f"[Hybrid] 实体匹配度加成: {boosted} 篇文档获得额外分数")
-    return boosted

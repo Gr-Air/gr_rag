@@ -57,6 +57,8 @@ class LlmClientConfig:
     api_key: str
     model: str
     base_url: str | None = None
+    # 端点是否接受 temperature：严格推理模型（o3 / o1 / deepseek-r1 等）置 false
+    supports_temperature: bool = True
 
 
 # ============================================================

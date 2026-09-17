@@ -123,9 +123,8 @@ def test_search_503_when_index_not_ready(monkeypatch):
     assert "索引尚未初始化" in r.json()["error"]
 
 
-def test_stats_and_docs_list_shape(monkeypatch):
+def test_stats_shape(monkeypatch):
     import server.routers.stats as stats_module
-    import server.routers.docs as docs_module
 
     class FakeKbInfo:
         def get_wiki_stats(self):
@@ -143,9 +142,6 @@ def test_stats_and_docs_list_shape(monkeypatch):
                 "projects": ["项目"],
                 "docTypes": ["类型"],
             }
-
-        def list_raw_docs(self):
-            return [{"id": "raw_a", "title": "A", "path": "Raw/a.md"}]
 
     monkeypatch.setattr(stats_module, "get_kb_info", lambda: FakeKbInfo())
     monkeypatch.setattr(stats_module, "is_index_ready", lambda: True)
@@ -169,10 +165,6 @@ def test_stats_and_docs_list_shape(monkeypatch):
     assert stats["indexVersion"] == 7
     assert isinstance(stats["indexVersion"], int)
     assert stats["indexBuiltAt"] == "T"
-
-    monkeypatch.setattr(docs_module, "get_kb_info", lambda: FakeKbInfo())
-    docs = client.get("/api/docs/list").json()
-    assert docs["total"] == 1 and docs["docs"][0]["id"] == "raw_a"
 
 
 def test_stats_500_on_error(monkeypatch):

@@ -79,7 +79,7 @@ def create_hybrid_search(deps: HybridSearchDeps) -> HybridSearchFn:
             ),
         )
 
-        # assembler 实体加成与 fusion 实体过滤共用同一开关
+        # assembler 实体查询分支与 fusion 实体过滤共用同一开关
         effective_analysis = QueryAnalysis(
             matched_keywords=(
                 None

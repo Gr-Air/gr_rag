@@ -1,7 +1,8 @@
 """提示词模板（逐字移植自 src/application/chat/promptTemplate.ts）。
 
 base / followup / compare 三套用户模板 + 统一 system 模板；
-build_rewrite_prompt 动态注入已知实体分类列表。
+build_rewrite_prompt 动态注入已知实体分类列表；
+输出 schema 约定见 query_rewriter._rewrite_query 的 Agently .output()。
 """
 
 from __future__ import annotations
@@ -199,18 +200,23 @@ class PromptTemplate:
 - 序号追问："第二个呢"、"第三个怎么样"
 - 比较追问："它和XX比呢"
 
-## 输出格式
+## 输出要求
 
-严格输出一个 JSON 对象，不要有任何其他内容：
+按结构化要求输出改写结果。字段含义与下方 schema 完全一致（schema 同时由 Agently .output() 在运行时校验，
+字段缺失/类型不符时会自动重试并把错误反馈给你，所以请严格遵守）。
+
+必须严格输出的 JSON 形态：
 
 {{
-  "rewritten": "改写后的查询语句",
-  "entities": ["实体1", "实体2"],
-  "intent": "fact|list|compare|summary|analysis|other",
+  "rewritten":        "改写后的查询语句（字符串）",
+  "entities":         ["实体1", "实体2"],
+  "intent":           "fact|list|compare|summary|analysis|other 之一",
   "relevantDocTypes": ["文档类型1", "文档类型2"],
-  "isFollowUp": true或false,
-  "reason": "改写理由（中文，不超过20字）"
+  "isFollowUp":       true或false,
+  "reason":           "改写理由（中文，不超过 20 字）"
 }}
+
+只输出符合以上 schema 的 JSON 对象，不要任何额外解释、前后缀或 Markdown 代码块。
 
 ### intent 说明
 - fact: 查询具体事实/数值（如"徐峰负责什么"、"项目有多少人"）

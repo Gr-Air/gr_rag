@@ -48,6 +48,7 @@ def _build() -> dict:
             api_key=settings.effective_api_key,
             base_url=settings.effective_base_url or None,
             model=settings.llm_model,
+            supports_temperature=settings.llm_supports_temperature,
         )
     )
     file_store = FsDocumentFileStore()
@@ -91,8 +92,7 @@ def _build() -> dict:
             "cache_lookup": cache_mod.lookup,
             "cache_save": cache_mod.save,
             "chunk_store": chunk_store,
-            "struct_query": struct_engine,
-            "file_store": file_store,
+            "entity_search": entity_search,
             "hybrid_search": hybrid_search,
             "smart_rewriter": smart_rewriter,
             "rag_chat_stream": rag_chat_stream,
@@ -150,6 +150,7 @@ def create_request_llm(
             api_key=api_key or settings.effective_api_key,
             base_url=base_url or settings.effective_base_url or None,
             model=model or settings.llm_model,
+            supports_temperature=settings.llm_supports_temperature,
         )
     )
 

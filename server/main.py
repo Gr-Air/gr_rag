@@ -3,7 +3,7 @@
 启动（在 server/ 目录下）：
     uvicorn server.main:app --reload --port 8000
 
-P0：注册 5 个契约桩接口；P1-P4 逐步替换为真实 RAG 内核。
+P0：注册 4 个契约桩接口；P1-P4 逐步替换为真实 RAG 内核。
 P6 起在此挂载 Next.js 静态产物实现单进程部署。
 """
 
@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import chat, docs, eval as eval_router, search, stats
+from .routers import chat, eval as eval_router, search, stats
 
 
 def create_app() -> FastAPI:
@@ -32,7 +32,6 @@ def create_app() -> FastAPI:
     app.include_router(chat.router)
     app.include_router(search.router)
     app.include_router(stats.router)
-    app.include_router(docs.router)
     app.include_router(eval_router.router)
 
     @app.get("/health")

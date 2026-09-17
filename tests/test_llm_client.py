@@ -1,131 +1,120 @@
-"""llm_client 测试（对应 TS openaiClient 行为）。
+"""llm_client 测试（Agently 版）。
 
 - Noop 降级 / 工厂选择
-- complete 请求体（推理模型省略 temperature/max_tokens）与响应解析
-- stream SSE 解析（[DONE] / 坏行 / 空 choices）
+- complete / stream 的消息映射（system→.system()，中间轮→chat_history，末条→.input()）
+- options 传递（temperature 由 config.supports_temperature 显式控制）与响应解析
+- delta 流消费与空段过滤
+
+通过注入 FakeAgent 工厂在 Agently 边界打桩，不发真实请求。
 """
 
 from __future__ import annotations
 
-import json
-
-import httpx
 import pytest
 
-from server.rag.chat import llm_client as llm_mod
 from server.rag.chat.llm_client import (
     NoopLlmClient,
     OpenAiLlmClient,
     create_llm_client,
-    is_reasoning_model,
 )
 from server.rag.chat.types import LlmClientConfig, LlmMessage
 
 
 # ------------------------------------------------------------
-# 假 httpx
+# Fake Agently 边界
 # ------------------------------------------------------------
 
 
-class FakeResponse:
-    def __init__(self, status_code=200, data=None):
-        self.status_code = status_code
-        self._data = data if data is not None else {}
+class FakeResult:
+    def __init__(self, text: str = "", deltas: list[str] | None = None):
+        self._text = text
+        self._deltas = deltas or []
 
-    def json(self):
-        return self._data
+    def get_text(self) -> str:
+        return self._text
 
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            request = httpx.Request("POST", "http://test/v1/chat/completions")
-            response = httpx.Response(self.status_code, request=request)
-            raise httpx.HTTPStatusError("error", request=request, response=response)
+    def get_generator(self, type=None, content=None):
+        assert type == "delta"
+        return iter(self._deltas)
 
 
-class FakeStreamContext:
-    def __init__(self, lines, status_code=200):
-        self._lines = lines
-        self._status_code = status_code
+class FakeAgent:
+    """记录链式调用并按预设返回结果。"""
 
-    def __enter__(self):
+    def __init__(self, result: FakeResult):
+        self.result = result
+        self.calls: list[tuple] = []
+
+    def set_settings(self, settings):
+        self.calls.append(("set_settings", settings))
         return self
 
-    def __exit__(self, *args):
-        return False
-
-    def raise_for_status(self):
-        if self._status_code >= 400:
-            request = httpx.Request("POST", "http://test/v1/chat/completions")
-            response = httpx.Response(self._status_code, request=request)
-            raise httpx.HTTPStatusError("error", request=request, response=response)
-
-    def iter_lines(self):
-        return iter(self._lines)
-
-
-class FakeHttpxClient:
-    posts: list[dict] = []
-    streams: list[dict] = []
-    complete_response: FakeResponse | None = None
-    stream_lines: list[str] = []
-    stream_status: int = 200
-
-    def __init__(self, timeout=None):
-        pass
-
-    def __enter__(self):
+    def set_chat_history(self, history):
+        self.calls.append(("chat_history", [dict(m) for m in history]))
         return self
 
-    def __exit__(self, *args):
-        return False
+    def options(self, opts):
+        self.calls.append(("options", dict(opts)))
+        return self
 
-    def post(self, url, headers=None, json=None):
-        FakeHttpxClient.posts.append(
-            {"url": url, "headers": headers, "json": json}
-        )
-        return FakeHttpxClient.complete_response
+    def system(self, prompt):
+        self.calls.append(("system", prompt))
+        return self
 
-    def stream(self, method, url, headers=None, json=None):
-        FakeHttpxClient.streams.append(
-            {"method": method, "url": url, "headers": headers, "json": json}
-        )
-        return FakeStreamContext(FakeHttpxClient.stream_lines, FakeHttpxClient.stream_status)
+    def input(self, content):
+        self.calls.append(("input", content))
+        return self
 
-
-@pytest.fixture(autouse=True)
-def _fake_httpx(monkeypatch):
-    FakeHttpxClient.posts = []
-    FakeHttpxClient.streams = []
-    FakeHttpxClient.complete_response = FakeResponse()
-    FakeHttpxClient.stream_lines = []
-    FakeHttpxClient.stream_status = 200
-    monkeypatch.setattr(llm_mod.httpx, "Client", FakeHttpxClient)
-    yield FakeHttpxClient
+    def get_result(self):
+        self.calls.append(("get_result",))
+        return self.result
 
 
-def _config(model="qwen3.7-max", base_url="https://api.example.com/v1/"):
-    return LlmClientConfig(api_key="test-key", model=model, base_url=base_url)
+class FakeHarness:
+    """收集每次调用创建的 agent。"""
+
+    def __init__(self, result: FakeResult | None = None, error: Exception | None = None):
+        self.agents: list[FakeAgent] = []
+        self.result = result or FakeResult(text="收到")
+        self.error = error
+
+    def factory(self):
+        def _create():
+            if self.error:
+                raise self.error
+            agent = FakeAgent(self.result)
+            self.agents.append(agent)
+            return agent
+
+        return _create
 
 
-# ------------------------------------------------------------
-# is_reasoning_model
-# ------------------------------------------------------------
-
-
-class TestIsReasoningModel:
-    @pytest.mark.parametrize(
-        "model",
-        ["qwen3.7-max", "gpt-4o", "qwen-plus", "deepseek-v3"],
+def _client(
+    model="qwen3.7-max",
+    base_url="https://api.example.com/v1/",
+    harness=None,
+    supports_temperature=True,
+):
+    config = LlmClientConfig(
+        api_key="test-key",
+        model=model,
+        base_url=base_url,
+        supports_temperature=supports_temperature,
     )
-    def test_regular_models(self, model):
-        assert is_reasoning_model(model) is False
+    factory = harness.factory() if harness else None
+    return OpenAiLlmClient(config, agent_factory=factory)
 
-    @pytest.mark.parametrize(
-        "model",
-        ["deepseek-r1", "deepseek-r1-distill-qwen", "o3-reasoning", "REASONING-X"],
-    )
-    def test_reasoning_models(self, model):
-        assert is_reasoning_model(model) is True
+
+def _call(agent, name):
+    return next(call for call in agent.calls if call[0] == name)
+
+
+def _has(agent, name):
+    return any(call[0] == name for call in agent.calls)
+
+
+def _opts_of(agent):
+    return _call(agent, "options")[1]
 
 
 # ------------------------------------------------------------
@@ -147,7 +136,9 @@ class TestNoopAndFactory:
         assert isinstance(client, NoopLlmClient)
 
     def test_factory_with_key_returns_openai(self):
-        client = create_llm_client(_config())
+        client = create_llm_client(
+            LlmClientConfig(api_key="k", model="qwen3.7-max", base_url="http://x")
+        )
         assert isinstance(client, OpenAiLlmClient)
 
 
@@ -157,92 +148,105 @@ class TestNoopAndFactory:
 
 
 class TestComplete:
-    def test_parses_content(self, _fake_httpx):
-        _fake_httpx.complete_response = FakeResponse(
-            data={"choices": [{"message": {"content": "你好"}}]}
-        )
-        client = OpenAiLlmClient(_config())
-        assert client.complete(
-            [LlmMessage(role="user", content="hi")]
-        ) == "你好"
+    def test_parses_content(self):
+        harness = FakeHarness(FakeResult(text="你好"))
+        client = _client(harness=harness)
+        assert client.complete([LlmMessage(role="user", content="hi")]) == "你好"
 
-        post = _fake_httpx.posts[0]
-        assert post["url"] == "https://api.example.com/v1/chat/completions"
-        assert post["headers"]["Authorization"] == "Bearer test-key"
-        body = post["json"]
-        assert body["model"] == "qwen3.7-max"
-        assert body["messages"] == [{"role": "user", "content": "hi"}]
+        agent = harness.agents[0]
+        settings = _call(agent, "set_settings")[1]
+        assert settings.model == "qwen3.7-max"
+        assert settings.base_url == "https://api.example.com/v1"
+        assert settings.api_key == "test-key"
+        assert _call(agent, "input")[1] == "hi"
 
-    def test_base_url_trailing_slashes_stripped(self, _fake_httpx):
-        client = OpenAiLlmClient(_config(base_url="https://api.example.com/v1///"))
-        client.complete([LlmMessage(role="user", content="hi")])
-        assert _fake_httpx.posts[0]["url"] == "https://api.example.com/v1/chat/completions"
-
-    def test_temperature_and_max_tokens_for_regular_model(self, _fake_httpx):
-        OpenAiLlmClient(_config()).complete(
-            [LlmMessage(role="user", content="hi")],
-            temperature=0,
-            max_tokens=300,
-        )
-        body = _fake_httpx.posts[0]["json"]
-        assert body["temperature"] == 0
-        assert body["max_tokens"] == 300
-
-    def test_reasoning_model_omits_temperature_and_max_tokens(self, _fake_httpx):
-        OpenAiLlmClient(_config(model="deepseek-r1-distill-qwen")).complete(
-            [LlmMessage(role="user", content="hi")],
-            temperature=0,
-            max_tokens=300,
-        )
-        body = _fake_httpx.posts[0]["json"]
-        assert "temperature" not in body
-        assert "max_tokens" not in body
-
-    def test_none_temperature_omitted_regular_model(self, _fake_httpx):
-        OpenAiLlmClient(_config()).complete(
-            [LlmMessage(role="user", content="hi")]
-        )
-        body = _fake_httpx.posts[0]["json"]
-        assert "temperature" not in body
-        assert "max_tokens" not in body
-
-    def test_dict_messages_passed_through(self, _fake_httpx):
-        OpenAiLlmClient(_config()).complete(
+    def test_system_mapped_to_system_slot(self):
+        harness = FakeHarness()
+        _client(harness=harness).complete(
             [{"role": "system", "content": "s"}, LlmMessage(role="user", content="u")]
         )
-        body = _fake_httpx.posts[0]["json"]
-        assert body["messages"] == [
-            {"role": "system", "content": "s"},
-            {"role": "user", "content": "u"},
+        agent = harness.agents[0]
+        assert _call(agent, "system")[1] == "s"
+        assert _call(agent, "input")[1] == "u"
+
+    def test_intermediate_messages_go_to_chat_history(self):
+        harness = FakeHarness()
+        _client(harness=harness).complete(
+            [
+                {"role": "system", "content": "s"},
+                {"role": "user", "content": "q1"},
+                {"role": "assistant", "content": "a1"},
+                {"role": "user", "content": "q2"},
+            ]
+        )
+        agent = harness.agents[0]
+        assert _call(agent, "chat_history")[1] == [
+            {"role": "user", "content": "q1"},
+            {"role": "assistant", "content": "a1"},
         ]
+        assert _call(agent, "input")[1] == "q2"
 
-    def test_empty_choices_returns_none(self, _fake_httpx):
-        _fake_httpx.complete_response = FakeResponse(data={"choices": []})
-        assert OpenAiLlmClient(_config()).complete(
-            [LlmMessage(role="user", content="hi")]
-        ) is None
-
-    def test_empty_content_returns_none(self, _fake_httpx):
-        _fake_httpx.complete_response = FakeResponse(
-            data={"choices": [{"message": {"content": ""}}]}
+    def test_temperature_and_max_tokens_for_regular_model(self):
+        harness = FakeHarness()
+        _client(harness=harness).complete(
+            [LlmMessage(role="user", content="hi")],
+            temperature=0,
+            max_tokens=300,
         )
-        assert OpenAiLlmClient(_config()).complete(
+        assert _opts_of(harness.agents[0]) == {"temperature": 0, "max_tokens": 300}
+
+    def test_reasoning_model_still_receives_options(self):
+        """不做模型名猜测：名字不参与判断，参数按显式配置下发。"""
+        harness = FakeHarness()
+        _client(model="deepseek-r1-distill-qwen", harness=harness).complete(
+            [LlmMessage(role="user", content="hi")],
+            temperature=0,
+            max_tokens=300,
+        )
+        assert _opts_of(harness.agents[0]) == {"temperature": 0, "max_tokens": 300}
+
+    def test_supports_temperature_false_omits_temperature_keeps_max_tokens(self):
+        """supports_temperature=False：只摘 temperature，max_tokens 照常透传。"""
+        harness = FakeHarness()
+        _client(harness=harness, supports_temperature=False).complete(
+            [LlmMessage(role="user", content="hi")],
+            temperature=0,
+            max_tokens=300,
+        )
+        assert _opts_of(harness.agents[0]) == {"max_tokens": 300}
+
+    def test_supports_temperature_false_and_no_max_tokens_skips_options(self):
+        harness = FakeHarness()
+        _client(harness=harness, supports_temperature=False).complete(
+            [LlmMessage(role="user", content="hi")], temperature=0.5
+        )
+        assert not _has(harness.agents[0], "options")
+
+    def test_none_temperature_omitted_regular_model(self):
+        harness = FakeHarness()
+        _client(harness=harness).complete([LlmMessage(role="user", content="hi")])
+        assert not _has(harness.agents[0], "options")
+
+    def test_empty_text_returns_none(self):
+        harness = FakeHarness(FakeResult(text=""))
+        assert _client(harness=harness).complete(
             [LlmMessage(role="user", content="hi")]
         ) is None
 
-    def test_not_available_short_circuits(self, _fake_httpx):
+    def test_not_available_short_circuits(self):
+        harness = FakeHarness()
         client = OpenAiLlmClient(
-            LlmClientConfig(api_key="", model="qwen3.7-max", base_url="http://x")
+            LlmClientConfig(api_key="", model="qwen3.7-max", base_url="http://x"),
+            agent_factory=harness.factory(),
         )
+        assert client.available is False
         assert client.complete([LlmMessage(role="user", content="hi")]) is None
-        assert _fake_httpx.posts == []
+        assert harness.agents == []
 
-    def test_http_error_propagates(self, _fake_httpx):
-        _fake_httpx.complete_response = FakeResponse(status_code=500)
-        with pytest.raises(httpx.HTTPStatusError):
-            OpenAiLlmClient(_config()).complete(
-                [LlmMessage(role="user", content="hi")]
-            )
+    def test_error_propagates(self):
+        harness = FakeHarness(error=RuntimeError("boom"))
+        with pytest.raises(RuntimeError, match="boom"):
+            _client(harness=harness).complete([LlmMessage(role="user", content="hi")])
 
 
 # ------------------------------------------------------------
@@ -250,80 +254,66 @@ class TestComplete:
 # ------------------------------------------------------------
 
 
-def _sse(payload: dict) -> str:
-    return "data: " + json.dumps(payload, ensure_ascii=False)
-
-
-def _token_line(content: str) -> str:
-    return _sse({"choices": [{"delta": {"content": content}}]})
-
-
 class TestStream:
-    def test_parses_sse_tokens(self, _fake_httpx):
-        _fake_httpx.stream_lines = [
-            "",
-            ": comment line",
-            _token_line("你"),
-            _token_line("好"),
-            "data: [DONE]",
-            _token_line("不应出现"),
-        ]
-        client = OpenAiLlmClient(_config())
-        tokens = list(client.stream([LlmMessage(role="user", content="hi")]))
-
+    def test_yields_deltas(self):
+        harness = FakeHarness(FakeResult(deltas=["你", "好"]))
+        tokens = list(
+            _client(harness=harness).stream([LlmMessage(role="user", content="hi")])
+        )
         assert tokens == ["你", "好"]
-        stream = _fake_httpx.streams[0]
-        assert stream["method"] == "POST"
-        assert stream["url"] == "https://api.example.com/v1/chat/completions"
-        body = stream["json"]
-        assert body["stream"] is True
-        assert body["temperature"] == 0.3
 
-    def test_custom_temperature(self, _fake_httpx):
-        _fake_httpx.stream_lines = [_token_line("x"), "data: [DONE]"]
+    def test_default_temperature_0_3(self):
+        harness = FakeHarness(FakeResult(deltas=["x"]))
+        list(_client(harness=harness).stream([LlmMessage(role="user", content="hi")]))
+        assert _opts_of(harness.agents[0]) == {"temperature": 0.3}
+
+    def test_custom_temperature(self):
+        harness = FakeHarness(FakeResult(deltas=["x"]))
         list(
-            OpenAiLlmClient(_config()).stream(
+            _client(harness=harness).stream(
                 [LlmMessage(role="user", content="hi")], temperature=0.7
             )
         )
-        assert _fake_httpx.streams[0]["json"]["temperature"] == 0.7
+        assert _opts_of(harness.agents[0]) == {"temperature": 0.7}
 
-    def test_reasoning_model_omits_temperature(self, _fake_httpx):
-        _fake_httpx.stream_lines = [_token_line("x"), "data: [DONE]"]
+    def test_reasoning_model_still_gets_default_temperature(self):
+        """不做模型名猜测：流式默认 0.3 由显式配置控制。"""
+        harness = FakeHarness(FakeResult(deltas=["x"]))
         list(
-            OpenAiLlmClient(_config(model="deepseek-r1")).stream(
+            _client(model="deepseek-r1", harness=harness).stream(
                 [LlmMessage(role="user", content="hi")]
             )
         )
-        body = _fake_httpx.streams[0]["json"]
-        assert "temperature" not in body
+        assert _opts_of(harness.agents[0]) == {"temperature": 0.3}
 
-    def test_skips_bad_lines(self, _fake_httpx):
-        _fake_httpx.stream_lines = [
-            "data: not-json",
-            _sse({"choices": []}),
-            _sse({"choices": [{"delta": {}}]}),
-            _sse({"choices": [{"delta": {"content": ""}}]}),
-            _token_line("保留"),
-            "data: [DONE]",
-        ]
+    def test_supports_temperature_false_skips_default_temperature(self):
+        """supports_temperature=False：不再注入 0.3，连 options 都不调用。"""
+        harness = FakeHarness(FakeResult(deltas=["x"]))
         tokens = list(
-            OpenAiLlmClient(_config()).stream([LlmMessage(role="user", content="hi")])
+            _client(harness=harness, supports_temperature=False).stream(
+                [LlmMessage(role="user", content="hi")]
+            )
+        )
+        assert tokens == ["x"]
+        assert not _has(harness.agents[0], "options")
+
+    def test_empty_deltas_filtered(self):
+        harness = FakeHarness(FakeResult(deltas=["", "保留"]))
+        tokens = list(
+            _client(harness=harness).stream([LlmMessage(role="user", content="hi")])
         )
         assert tokens == ["保留"]
 
-    def test_not_available_yields_nothing(self, _fake_httpx):
+    def test_not_available_yields_nothing(self):
+        harness = FakeHarness()
         client = OpenAiLlmClient(
-            LlmClientConfig(api_key="", model="qwen3.7-max", base_url="http://x")
+            LlmClientConfig(api_key="", model="qwen3.7-max", base_url="http://x"),
+            agent_factory=harness.factory(),
         )
         assert list(client.stream([LlmMessage(role="user", content="hi")])) == []
-        assert _fake_httpx.streams == []
+        assert harness.agents == []
 
-    def test_http_error_propagates(self, _fake_httpx):
-        _fake_httpx.stream_status = 500
-        with pytest.raises(httpx.HTTPStatusError):
-            list(
-                OpenAiLlmClient(_config()).stream(
-                    [LlmMessage(role="user", content="hi")]
-                )
-            )
+    def test_error_propagates(self):
+        harness = FakeHarness(error=RuntimeError("boom"))
+        with pytest.raises(RuntimeError, match="boom"):
+            list(_client(harness=harness).stream([LlmMessage(role="user", content="hi")]))

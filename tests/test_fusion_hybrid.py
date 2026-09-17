@@ -245,7 +245,7 @@ def test_hybrid_full_score_chain():
     assert results[0].chunk.id == "docA_0"
 
 
-def test_hybrid_entity_boost_merges_into_rrf():
+def test_hybrid_entity_query_no_score_boost():
     hybrid_search = build_hybrid(
         [{"chunkId": "docA_0", "score": 0.95}, {"chunkId": "docB_0", "score": 0.80}],
         [],
@@ -260,8 +260,8 @@ def test_hybrid_entity_boost_merges_into_rrf():
     doc_a = next(r for r in results if r.chunk.id == "docA_0")
     doc_b = next(r for r in results if r.chunk.id == "docB_0")
 
-    # docA 内容含"徐峰"：rrf = 1/61 + 0.2
-    assert doc_a.scores.rrf == pytest.approx(1 / 61 + 0.2, abs=1e-9)
+    # 已移除实体匹配度加成：docA 内容含"徐峰"，rrf 仅为向量路贡献 1/61，无 +0.2 bonus
+    assert doc_a.scores.rrf == pytest.approx(1 / 61, abs=1e-9)
     # docB 不含关键词 → 向量排名被过滤且无 BM25 → 无 RRF，vector 原始分保留
     assert doc_b.scores.rrf is None
     assert doc_b.scores.vector == 0.80
