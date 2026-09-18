@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 MANIFEST_FILENAME = "index_manifest.json"
-REQUIRED_STORES = ["lancedb", "bm25", "chunksMeta", "parents"]
+REQUIRED_STORES = ["lancedb", "bm25", "chunksMeta", "parents"]  # bm25 store 名称保留以兼容旧 manifest，路径已切到 tantivy_bm25/
 OPTIONAL_STORES = ["structDb"]
 
 
@@ -46,15 +46,18 @@ def collect_store_status(data_dir: Path, name: str) -> dict:
         except Exception:
             pass
     elif name == "bm25":
-        d = data_dir / "bm25"
-        ready = (
-            (d / "meta.json").exists()
-            and (d / "doc_lengths.json").exists()
-            and _has_matching_file(d, "shard_", ".json")
-        )
+        d = data_dir / "tantivy_bm25"
+        # tantivy 自有持久化：目录存在 + 至少有一个 tantivy 段文件
+        ready = d.exists() and any(
+            f.name.endswith(".meta.json")
+            or f.suffix in (".idx", ".pos", ".term", ".fast")
+            for f in d.iterdir()
+        ) if d.exists() else False
         try:
-            meta = _read_json(d / "meta.json")
-            detail = {"docCount": meta.get("docCount"), "totalShards": meta.get("totalShards")}
+            meta_path = next((f for f in d.iterdir() if f.name.endswith(".meta.json")), None)
+            if meta_path:
+                meta = _read_json(meta_path)
+                detail = {"docCount": meta.get("doc_count"), "indexed": meta.get("indexed")}
         except Exception:
             pass
     elif name == "chunksMeta":

@@ -17,6 +17,7 @@ agently>=4.1
 
 # --- 索引与检索 ---
 jieba>=0.42
+tantivy>=0.20 # BM25 全文检索（Rust 内核，替换原自研引擎）
 lancedb>=0.20
 pyarrow>=18
 numpy>=2.1

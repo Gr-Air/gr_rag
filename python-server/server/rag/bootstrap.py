@@ -17,7 +17,7 @@ from .chat.rag_engine import create_rag_chat_stream
 from .eval.eval_service import EvalService, create_eval_service
 from .retrieve import cache as cache_mod
 from .retrieve.engines import embedding as embedding_mod
-from .retrieve.engines.bm25_engine import get_bm25_engine
+from .retrieve.engines.bm25_tantivy import get_tantivy_bm25_engine
 from .retrieve.engines.chunk_store import get_chunk_store
 from .retrieve.engines.struct_engine import get_struct_engine
 from .retrieve.engines.vector_engine import VectorEngine
@@ -36,7 +36,7 @@ def _build() -> dict:
     # ---- Infrastructure ----
     chunk_store = get_chunk_store()
     vector_engine = VectorEngine()
-    bm25_engine = get_bm25_engine()
+    bm25_engine = get_tantivy_bm25_engine()
     struct_engine = get_struct_engine()
 
     retrievers = [VectorRetriever(vector_engine), BM25Retriever(bm25_engine)]
@@ -170,8 +170,8 @@ def is_index_ready() -> bool:
     data_dir = get_settings().data_dir
     manifest = read_manifest(data_dir)
     if manifest is None:
-        # 降级：旧版文件存在性检查
-        return (data_dir / "lancedb").exists() and (data_dir / "bm25" / "meta.json").exists()
+        # 降级：旧版文件存在性检查（兼容尚未重新构建索引的本地环境）
+        return (data_dir / "lancedb").exists() and (data_dir / "tantivy_bm25").exists()
     return check_stores_ready(data_dir)
 
 

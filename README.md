@@ -75,7 +75,7 @@ RRF(d) = Σ 1/(k + rank_i(d))，k = 60
 | 检索通路 | 技术方案 | 召回量 |
 |---------|---------|-------|
 | 向量检索 | DashScope `text-embedding-v4`，1024维，余弦相似度，LanceDB IVF_PQ 索引 | top20 |
-| BM25 检索 | jieba 分词（Python 实现 + 自定义词典），JSON 分片倒排索引 | top20 |
+| BM25 检索 | jieba 分词（Python 实现 + 自定义词典）→ Tantivy 倒排索引（Rust 内核） | top20 |
 
 融合后经 Rerank 重排序，取 top5 文档块供 LLM 生成使用。无 LLM 时降级为检索结果直接展示。
 
@@ -156,7 +156,7 @@ python-server/
 │   │   │   ├── profile.py     #   检索配置（baseline 等）
 │   │   │   └── engines/       #   基础设施引擎
 │   │   │       ├── vector_engine.py  # LanceDB 向量检索（IVF_PQ 余弦）
-│   │   │       ├── bm25_engine.py    # BM25 引擎（读索引分片 JSON）
+│   │   │       ├── bm25_tantivy.py  # BM25 引擎（Tantivy Rust 内核，jieba 分词后空格 join）
 │   │   │       ├── struct_engine.py  # SQLite 结构化查询
 │   │   │       ├── embedding.py       # DashScope Embedding 客户端
 │   │   │       ├── tokenizer.py       # jieba 分词 + 业务词典（索引/查询唯一真源）
@@ -212,7 +212,7 @@ hybrid_search(query, options)
 | 存储类型 | 数据内容 | 用途 |
 |---------|---------|------|
 | LanceDB | 文档块向量（1024维，1036 chunk） | 向量检索 |
-| BM25 倒排索引 | 分词后的词项→文档映射（1036 chunk，JSON 分片） | BM25 检索 |
+| Tantivy BM25 索引 | Tantivy 自有格式（`tantivy_bm25/`，1036 chunk） | BM25 检索 |
 | SQLite `struct_kb.db` | 实体/概念 → chunk 关联（3729 词条，32951 关联边） | 实体查询 |
 | chunks_meta | 文档块元数据（1036 条，仅 Raw 文档） | 上下文提取 |
 | `index_manifest.json` | 索引版本 + builtAt + gitCommit | 跨索引一致性 + 缓存失效感知 |
@@ -286,7 +286,7 @@ gr_rag/
 - **LLM 请求层**: **Agently 框架**（OpenAI 兼容端点，qwen3.7-max；`.output()` 结构化输出 + `get_generator(type="delta")` 流式 SSE）
 - **分词**: jieba（结巴分词 Python 实现，业务自定义词典，索引/查询唯一真源）
 - **向量**: 1024维 DashScope `text-embedding-v4` + LanceDB IVF_PQ 索引 + 余弦相似度（pyarrow + numpy）
-- **BM25**: 纯 Python 倒排索引实现（jieba 分词，JSON 分片存储）
+- **BM25**: **Tantivy**（Rust 内核，进程内嵌入式全文检索引擎；jieba 切词后空格 join 喂 tantivy，保证"两侧同口径"；倒排索引 + BM25 打分均由 tantivy 维护与持久化）
 - **结构化数据**: SQLite（3729 词条 → 32951 关联边）
 - **Rerank**: DashScope `qwen3-rerank`（httpx 直连，阈值 0.5，失败降级）
 - **HTTP 客户端**: httpx（Embedding / Rerank 直连）

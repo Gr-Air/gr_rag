@@ -2,7 +2,7 @@
 
 输出：
 - chunks_meta/shard_*.json + config.json
-- bm25/shard_*.json + meta.json + doc_lengths.json
+- tantivy_bm25/  Tantivy 自有持久化目录
 - parents/parents.json
 - vectors/config.json
 - lancedb/chunks.lance（+ 按规模选择的向量索引：小数据跳过索引走暴力检索，
@@ -20,6 +20,7 @@ from typing import Any
 import lancedb
 from lancedb.index import HnswSq, IvfPq
 
+from ..rag.retrieve.engines.bm25_tantivy import build_tantivy_index
 from .chunker import Chunk
 
 # --- 向量索引策略阈值（按向量条数分档）---
@@ -74,38 +75,26 @@ def write_chunks_meta(chunks: list[Chunk], data_dir: Path, shard_size: int = 200
     return shard_idx
 
 
-def write_bm25_index(
-    inv_index: dict[str, list[dict[str, Any]]],
-    doc_lengths: dict[str, int],
-    data_dir: Path,
-    shard_size: int = 5000,
-) -> int:
-    bm25_dir = data_dir / "bm25"
-    bm25_dir.mkdir(parents=True, exist_ok=True)
+def write_tantivy_bm25(chunks: list[Chunk], data_dir: Path) -> int:
+    """用 tantivy-py 构建 BM25 倒排索引。
 
-    terms = list(inv_index.items())
-    shard_idx = 0
-    for i in range(0, len(terms), shard_size):
-        shard = {term: postings for term, postings in terms[i : i + shard_size]}
-        _dump_json(bm25_dir / f"shard_{shard_idx}.json", shard)
-        shard_idx += 1
+    替代原自研 write_bm25_index：tantivy 内部维护倒排 + 持久化，
+    无需手写 shard_*.json / meta.json / doc_lengths.json。
 
-    _cleanup_extra_shards(bm25_dir, shard_idx)
+    两侧分词口径仍走项目 jieba + 98 条 custom_words（bm25_tantivy.build_tantivy_index）。
 
-    total_len = sum(doc_lengths.values())
-    avg_doc_len = total_len / len(doc_lengths) if doc_lengths else 0
-    _dump_json(
-        bm25_dir / "meta.json",
-        {
-            "docCount": len(doc_lengths),
-            "avgDocLen": avg_doc_len,
-            "totalTerms": len(inv_index),
-            "totalShards": shard_idx,
-        },
+    Returns:
+        写入的 chunk 数
+    """
+    engine = build_tantivy_index(
+        [{"id": c.id, "content": c.content} for c in chunks],
+        content_key="content",
+        chunk_id_key="id",
+        tantivy_dir=data_dir / "tantivy_bm25",
+        overwrite=True,
     )
-    _dump_json(bm25_dir / "doc_lengths.json", doc_lengths)
-    print(f"  ✅ BM25: {len(doc_lengths)} chunk, {len(inv_index)} 词项, {shard_idx} 个分片")
-    return shard_idx
+    print(f"  ✅ Tantivy BM25: {engine.doc_count} 个 chunk（倒排 + BM25 由 tantivy 持久化）")
+    return engine.doc_count
 
 
 def write_parents(parents: dict[str, dict[str, Any]], data_dir: Path) -> None:

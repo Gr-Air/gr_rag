@@ -12,13 +12,11 @@ def _make_ready_store(d):
     (d / "vectors" / "config.json").write_text(
         json.dumps({"totalChunks": 3, "dim": 1024}), encoding="utf-8")
 
-    bm = d / "bm25"
+    # tantivy 索引：最小化结构（meta.json 是 tantivy 段元信息，非 BM25 索引摘要）
+    bm = d / "tantivy_bm25"
     bm.mkdir(parents=True)
-    (bm / "shard_0.json").write_text("{}", encoding="utf-8")
-    (bm / "meta.json").write_text(
-        json.dumps({"docCount": 3, "avgDocLen": 10, "totalTerms": 2, "totalShards": 1}),
-        encoding="utf-8")
-    (bm / "doc_lengths.json").write_text("{}", encoding="utf-8")
+    (bm / "placeholder.meta.json").write_text(
+        json.dumps({"doc_count": 3, "indexed": True}), encoding="utf-8")
 
     cm = d / "chunks_meta"
     cm.mkdir(parents=True)

@@ -18,7 +18,6 @@ from pathlib import Path
 
 from ..config import get_settings
 from ..rag.retrieve.engines.embedding import get_embeddings_batch
-from ..rag.retrieve.engines.tokenizer import tokenize_all_filtered
 from . import hasher, manifest as manifest_mod
 from .chunker import Chunk, chunk_document, extract_title, parse_filename
 from .scanner import scan_all
@@ -73,23 +72,18 @@ def _build_parents(raw_docs, chunks: list[Chunk]) -> dict[str, dict]:
     return parents
 
 
-def _build_bm25(chunks: list[Chunk]) -> tuple[dict[str, list[dict]], dict[str, int]]:
-    """构建倒排索引与文档长度表。
+def _build_bm25(chunks: list[Chunk]) -> int:
+    """构建 BM25 倒排索引（tantivy-py 实现）。
 
-    索引侧与查询侧必须同口径：查询侧是 tokenize_filtered（过滤停用词 + 去重保序），
-    因此索引侧用 tokenize_all_filtered（过滤停用词 + 保留词频）。
-    两侧都过滤后，停用词既不进倒排、也不计入 docLen，长度归一化只反映实词数量。
+    索引侧与查询侧同口径由 tantivy.build_tantivy_index 内部保证：
+    - 索引侧用 tokenize_all_filtered（jieba + 98 条 custom_words + 停用词过滤 + 保留词频）
+    - 查询侧用 tokenize_filtered（同一份 jieba + 词典 + 停用词）
+    - tantivy 内部按空格切 jieba ready 后的 token
+
+    Returns:
+        写入 chunk 数
     """
-    inv_index: dict[str, list[dict]] = {}
-    doc_lengths: dict[str, int] = {}
-    for i, c in enumerate(chunks):
-        tokens = tokenize_all_filtered(c.content)
-        doc_lengths[c.id] = len(tokens)
-        for term, freq in Counter(tokens).items():
-            inv_index.setdefault(term, []).append({"chunkId": c.id, "tf": freq})
-        if (i + 1) % 500 == 0:
-            print(f"  已索引 {i + 1}/{len(chunks)}, {len(inv_index)} 词项")
-    return inv_index, doc_lengths
+    return writer.write_tantivy_bm25(chunks, get_settings().data_dir)
 
 
 def run_full(dry_run: bool = False) -> None:
@@ -124,9 +118,8 @@ def run_full(dry_run: bool = False) -> None:
     index_type = writer.write_lancedb(chunks, vectors, dim, data_dir)
 
     # 阶段 3：BM25 + meta + parents + vectors 配置
-    print("\n[3/4] 构建 BM25 倒排索引...")
-    inv_index, doc_lengths = _build_bm25(chunks)
-    writer.write_bm25_index(inv_index, doc_lengths, data_dir)
+    print("\n[3/4] 构建 BM25 倒排索引（tantivy）...")
+    bm25_doc_count = _build_bm25(chunks)
     writer.write_chunks_meta(chunks, data_dir)
     print("\n  保存父文档...")
     writer.write_parents(_build_parents(raw_docs, chunks), data_dir)
@@ -152,7 +145,7 @@ def run_full(dry_run: bool = False) -> None:
         raise RuntimeError("必需 store 存在缺失，manifest 未写入")
 
     print("\n========================================")
-    print(f"  ✅ 全部索引构建完成！总块数 {len(chunks)}，维度 {dim}，BM25 词项 {len(inv_index)}")
+    print(f"  ✅ 全部索引构建完成！总块数 {len(chunks)}，维度 {dim}，BM25 chunk {bm25_doc_count}")
     print("========================================")
 
 

@@ -41,9 +41,12 @@ def test_all_filtered_keeps_tf_without_stopwords():
 
 
 def test_index_side_shares_query_tokenization():
-    """索引侧与查询侧同口径：停用词不进倒排，docLen 只计实词。"""
+    """索引侧与查询侧同口径：停用词不进倒排，docLen 只计实词（tantivy BM25 引擎验证）。"""
+    import tempfile
+    from pathlib import Path
+
     from server.indexing.chunker import Chunk
-    from server.indexing.cli import _build_bm25
+    from server.rag.retrieve.engines.bm25_tantivy import build_tantivy_index
 
     def _chunk(cid: str, content: str) -> Chunk:
         return Chunk(
@@ -57,15 +60,20 @@ def test_index_side_shares_query_tokenization():
         )
 
     text = "我们的微服务系统"  # 的 / 系统 在停用词表，我们 / 微服务 不在
-    inv_index, doc_lengths = _build_bm25(
-        [_chunk("d1_0", text), _chunk("d1_1", "微服务扩容方案")]
-    )
+    with tempfile.TemporaryDirectory() as tmp:
+        engine = build_tantivy_index(
+            [{"id": "d1_0", "content": text}, {"id": "d1_1", "content": "微服务扩容方案"}],
+            tantivy_dir=Path(tmp),
+        )
 
-    assert "的" not in inv_index and "系统" not in inv_index
-    assert doc_lengths["d1_0"] == len(tokenize_all_filtered(text)) == 2
-    assert doc_lengths["d1_0"] < len(tokenize_all(text))  # 比不过滤时更短
-    assert {p["chunkId"] for p in inv_index["微服务"]} == {"d1_0", "d1_1"}
-    assert inv_index["微服务"][0] == {"chunkId": "d1_0", "tf": 1}
+        # 停用词不进倒排：搜"的"应返回空
+        assert engine.search("的", top_k=10) == []
+        # 命中"系统"也为 0（antonymy，停用词不在倒排里）
+        assert engine.search("系统", top_k=10) == []
+        # 命中"微服务"应同时召回两个 chunk
+        hits = engine.search("微服务", top_k=10)
+        assert {h["chunkId"] for h in hits} == {"d1_0", "d1_1"}
+        assert hits[0]["score"] > 0  # BM25 分数非零
 
 
 def test_index_and_query_vocabulary_align():

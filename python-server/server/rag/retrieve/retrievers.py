@@ -7,7 +7,7 @@ StructRetriever 默认不进管线（profile.use_struct=true 时启用），查�
 from __future__ import annotations
 
 from ..types import RetrievalHit, RetrievalOptions, Scores, SearchQuery
-from .engines.bm25_engine import BM25Engine
+from .engines.bm25_tantivy import TantivyBM25Engine
 from .engines.struct_engine import StructEngine
 from .engines.vector_engine import VectorEngine
 
@@ -29,7 +29,7 @@ class VectorRetriever:
 class BM25Retriever:
     name = "bm25"
 
-    def __init__(self, engine: BM25Engine) -> None:
+    def __init__(self, engine: TantivyBM25Engine) -> None:
         self._engine = engine
 
     def search(self, query: SearchQuery, options: RetrievalOptions) -> list[RetrievalHit]:
