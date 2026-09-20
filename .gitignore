@@ -66,9 +66,7 @@ test/rag-eval/summary_*.md
 
 # spec目录也不提交到 GitHub
 spec/
-spec/**
-spec/**
-spec/**
+
 # python-server（Python 后端产物）
 .venv/
 data/
